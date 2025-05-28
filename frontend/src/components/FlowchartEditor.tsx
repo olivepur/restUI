@@ -65,6 +65,7 @@ import { useNavigate } from 'react-router-dom';
 import HistoryIcon from '@mui/icons-material/History';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { useResizeObserver } from '../hooks/useResizeObserver';
 
 interface FlowchartEditorProps {
     transactions: Transaction[];
@@ -1416,8 +1417,25 @@ export const FlowchartEditor: React.FC<FlowchartEditorProps> = ({ transactions, 
         localStorage.setItem('savedTransactions', JSON.stringify(updatedTransactions));
     };
 
+    // Add resize observer for the container with useCallback
+    const handleResize = useCallback((entry: ResizeObserverEntry) => {
+        // Only trigger resize if dimensions actually changed
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+            // Use RAF to batch resize events
+            requestAnimationFrame(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+        }
+    }, []);
+
+    const containerRef = useResizeObserver(handleResize, 250);
+
     return (
-        <Box sx={{ width: '100%', height: '80vh', position: 'relative' }}>
+        <Box 
+            ref={containerRef}
+            sx={{ width: '100%', height: '80vh', position: 'relative' }}
+        >
             <ReactFlow
                 nodes={nodesWithSelection}
                 edges={edgesWithSelection}

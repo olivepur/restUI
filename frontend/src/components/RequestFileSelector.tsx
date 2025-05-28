@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useResizeObserver } from '../hooks/useResizeObserver';
 import {
     Box,
     FormControl,
@@ -59,8 +60,22 @@ export const RequestFileSelector: React.FC<RequestFileSelectorProps> = ({ onRequ
         }
     };
 
+    // Add resize observer for the container with useCallback
+    const handleResize = useCallback((entry: ResizeObserverEntry) => {
+        // Only trigger resize if dimensions actually changed
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+            // Use RAF to batch resize events
+            requestAnimationFrame(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+        }
+    }, []);
+
+    const containerRef = useResizeObserver(handleResize, 250);
+
     return (
-        <Box>
+        <Box ref={containerRef}>
             <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Request File</InputLabel>
                 <Select
