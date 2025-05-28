@@ -1,0 +1,64 @@
+https://api.int.group-vehicle-file.com/vlmdm/group-vehicle-file/v1.0/vehicles/components/TMBTTTDLCMROW0004
+
+{
+  "vehicleDeviceInformation": {
+    "value": [
+      {
+        "content": [
+          {
+            "semanticId": 0,
+            "value": "B0P"
+          },
+          {
+            "semanticId": 6,
+            "value": "50A123ABC  "
+          }
+        ],
+        "rawContent": "B0P50A123ABC                       ",
+        "type": "",
+        "deleteFlag": "I",
+        "rateFlag": "U",
+        "diagnosticAddress16bit": "4204",
+        "indicatorId": 97,
+        "number": "B0P",
+        "creationTimestamp": "2025-05-25T06:45:00.03Z",
+        "updatedTimestamp": "2025-05-26T05:49:26.073Z",
+        "user": "user"
+      },
+      {
+        "content": [
+          {
+            "semanticId": 0,
+            "value": "B0Q"
+          },
+          {
+            "semanticId": 96,
+            "value": "0004"
+          }
+        ],
+        "rawContent": "B0Q0004                       ",
+        "type": "",
+        "deleteFlag": "I",
+        "rateFlag": "U",
+        "diagnosticAddress16bit": "4204",
+        "indicatorId": 98,
+        "number": "B0Q",
+        "creationTimestamp": "2025-05-25T09:45:00.03Z",
+        "updatedTimestamp": "2025-05-26T12:57:22.006Z",
+        "user": "user"
+      }
+    ],
+    "status": 200,
+    "message": ""
+  },
+  "ecu": {
+    "value": [],
+    "status": 404,
+    "message": "Not Found"
+  },
+  "nonEcu": {
+    "value": [],
+    "status": "403",
+    "message": "Forbidden"
+  }
+}

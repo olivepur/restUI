@@ -1,0 +1,53 @@
+https://api.int.group-vehicle-file.com/vlmdm/group-vehicle-file/v1.0/vehicles/components/WVWTTTDLCMROW0005
+{
+  "vehicleDeviceInformation": {
+    "value": [
+      {
+        "number": "B0P",
+        "indicatorId": 97,
+        "diagnosticAddress16bit": "4204",
+        "rateFlag": "U",
+        "type": "",
+        "content": [
+          {
+            "semanticId": 0,
+            "value": "B0P"
+          },
+          {
+            "semanticId": 6,
+            "value": "14B990100B "
+          }
+        ]
+      },
+      {
+        "number": "B0Q",
+        "indicatorId": 98,
+        "diagnosticAddress16bit": "4204",
+        "rateFlag": "U",
+        "type": "",
+        "content": [
+          {
+            "semanticId": 0,
+            "value": "B0Q"
+          },
+          {
+            "semanticId": 96,
+            "value": "0041"
+          }
+        ]
+      }
+    ],
+    "status": 200,
+    "message": ""
+  },
+  "ecu": {
+    "value": [],
+    "status": 404,
+    "message": "Not Found"
+  },
+  "nonEcu": {
+    "value": [],
+    "status": "403",
+    "message": "Forbidden"
+  }
+}

@@ -1,0 +1,35 @@
+https://api.int.group-vehicle-file.com/vlmdm/group-vehicle-file/v1.0/vehicles/components/WV1TTTDLCMROW0006
+{
+  "vehicleDeviceInformation": {
+    "value": [
+      {
+        "number": "B0P",
+        "creationTimestamp": "2025-05-25T06:45:00.03Z",
+        "rateFlag": "U",
+        "type": "",
+        "user": "user",
+        "rawContent": "B0P15B123ABC                       "
+      },
+      {
+        "number": "B0Q",
+        "creationTimestamp": "2025-05-21T12:45:00.03Z",
+        "rateFlag": "U",
+        "type": "",
+        "user": "user",
+        "rawContent": "B0Q0005                       "
+      }
+    ],
+    "status": 200,
+    "message": ""
+  },
+  "ecu": {
+    "value": [],
+    "status": 404,
+    "message": "Not Found"
+  },
+  "nonEcu": {
+    "value": [],
+    "status": 404,
+    "message": "Not Found"
+  }
+}

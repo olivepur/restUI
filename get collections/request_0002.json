@@ -1,0 +1,10 @@
+{
+    "method": "GET",
+    "url": "https://api.int.group-vehicle-file.com/vlmdm/group-vehicle-file/v1.0/vehicles/components/WAUTTTDLCMROW0001",
+    "metadata": {
+        "vin": "WAUTTTDLCMROW0001",
+        "brand": "AUDI",
+        "country": "DE",
+        "components": ["B0P", "B0Q"]
+    }
+} 
