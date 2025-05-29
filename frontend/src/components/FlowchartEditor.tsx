@@ -1,4 +1,8 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { statusColors } from './FlowchartEditor/styles';
+import { testStatusColors } from './FlowchartEditor/styles';
+import { StatusBadge } from './FlowchartEditor/components/StatusBadge';
+import { CustomEdge } from './FlowchartEditor/components/CustomEdge';
 import ReactFlow, {
     Controls,
     Background,
@@ -65,6 +69,7 @@ import { useNavigate } from 'react-router-dom';
 import HistoryIcon from '@mui/icons-material/History';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { useResizeObserver } from '../hooks/useResizeObserver';
 
 interface FlowchartEditorProps {
     transactions: Transaction[];
@@ -106,53 +111,6 @@ interface TransactionResponse {
 
 // Using SystemNodeData from FlowTypes
 
-// Move color constants to the top, before any usage
-// Update status color mapping with more specific styles
-const statusColors = {
-    running: {
-        backgroundColor: '#1976d2' as const,    // Blue
-        color: '#ffffff' as const
-    },
-    open: {
-        backgroundColor: '#757575' as const,    // Gray
-        color: '#ffffff' as const
-    },
-    pending: {
-        backgroundColor: '#ff9800' as const,    // Orange
-        color: '#ffffff' as const
-    },
-    stopped: {
-        backgroundColor: '#9e9e9e' as const,    // Light Gray
-        color: '#ffffff' as const
-    },
-    error: {
-        backgroundColor: '#d32f2f' as const,    // Red
-        color: '#ffffff' as const
-    },
-    performed: {
-        backgroundColor: '#4caf50' as const,    // Green
-        color: '#ffffff' as const
-    }
-} as const;
-
-const testStatusColors = {
-    'Not Tested': {
-        backgroundColor: '#757575' as const,    // Gray
-        color: '#ffffff' as const
-    },
-    'Testing': {
-        backgroundColor: '#1976d2' as const,    // Blue
-        color: '#ffffff' as const
-    },
-    'Passed': {
-        backgroundColor: '#4caf50' as const,    // Green
-        color: '#ffffff' as const
-    },
-    'Failed': {
-        backgroundColor: '#d32f2f' as const,    // Red
-        color: '#ffffff' as const
-    }
-} as const;
 
 // Define edge style types
 type EdgeStyleType = {
@@ -201,56 +159,6 @@ const edgeLabelStyles = {
     fontSize: '12px',
     fontFamily: 'monospace',
     pointerEvents: 'none' as const
-};
-
-// Custom Edge Component
-const CustomEdge: React.FC<EdgeProps<TransactionEdgeData>> = ({
-    id,
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-    style = {},
-    markerEnd,
-    label
-}) => {
-    const [edgePath, labelX, labelY] = getSmoothStepPath({
-        sourceX,
-        sourceY,
-        sourcePosition,
-        targetX,
-        targetY,
-        targetPosition,
-    });
-
-    return (
-        <>
-            <path
-                id={id}
-                style={{
-                    ...style,
-                    strokeWidth: 2,
-                    fill: 'none'
-                }}
-                className="react-flow__edge-path"
-                d={edgePath}
-                markerEnd={style.markerEnd || markerEnd}
-            />
-            {label && (
-                <text
-                    x={labelX}
-                    y={labelY}
-                    textAnchor="middle"
-                    alignmentBaseline="middle"
-                    style={edgeLabelStyles}
-                >
-                    {label}
-                </text>
-            )}
-        </>
-    );
 };
 
 // Custom System Node Component
@@ -398,35 +306,7 @@ const isTransactionEdge = (edge: Edge | null): edge is Edge<TransactionEdgeData>
     return edge !== null && edge.data !== undefined && 'transactionId' in edge.data;
 };
 
-// Update StatusBadge component with proper styling
-const StatusBadge: React.FC<{ runStatus?: EdgeStatus; testStatus?: string }> = ({ runStatus = 'open', testStatus = 'Not Tested' }) => {
-    return (
-        <Stack direction="row" spacing={1} alignItems="center">
-            <Chip
-                label={`Run: ${runStatus}`}
-                size="small"
-                sx={{
-                    backgroundColor: statusColors[runStatus].backgroundColor,
-                    color: statusColors[runStatus].color,
-                    '& .MuiChip-label': {
-                        fontWeight: 'bold'
-                    }
-                }}
-            />
-            <Chip
-                label={`Test: ${testStatus}`}
-                size="small"
-                sx={{
-                    backgroundColor: testStatusColors[testStatus as keyof typeof testStatusColors].backgroundColor,
-                    color: testStatusColors[testStatus as keyof typeof testStatusColors].color,
-                    '& .MuiChip-label': {
-                        fontWeight: 'bold'
-                    }
-                }}
-            />
-        </Stack>
-    );
-};
+
 
 export const FlowchartEditor: React.FC<FlowchartEditorProps> = ({ transactions, onRunTransaction, onSaveTransaction }) => {
     const [nodes, setNodes, onNodesChange] = useNodesState<SystemNodeData>([]);
@@ -452,21 +332,7 @@ export const FlowchartEditor: React.FC<FlowchartEditorProps> = ({ transactions, 
     // Add state for active tab
     const [activeTab, setActiveTab] = useState(0);
 
-    // Define custom edge component with access to runningEdges state
-    const CustomEdgeComponent = useMemo(() => {
-        const Component: React.FC<EdgeProps<TransactionEdgeData>> = (props) => {
-            const isRunning = runningEdges.has(props.id);
-            return (
-                <CustomEdge 
-                    {...props} 
-                    style={isRunning ? runningEdgeStyles : selectedEdgeStyles} 
-                    selected={true}
-                    animated={isRunning} 
-                />
-            );
-        };
-        return Component;
-    }, [runningEdges]);
+ 
 
     // Define edge types with memoized component
     const edgeTypes: EdgeTypes = useMemo(() => ({
@@ -1416,8 +1282,25 @@ export const FlowchartEditor: React.FC<FlowchartEditorProps> = ({ transactions, 
         localStorage.setItem('savedTransactions', JSON.stringify(updatedTransactions));
     };
 
+    // Add resize observer for the container with useCallback
+    const handleResize = useCallback((entry: ResizeObserverEntry) => {
+        // Only trigger resize if dimensions actually changed
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+            // Use RAF to batch resize events
+            requestAnimationFrame(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+        }
+    }, []);
+
+    const containerRef = useResizeObserver(handleResize, 250);
+
     return (
-        <Box sx={{ width: '100%', height: '80vh', position: 'relative' }}>
+        <Box 
+            ref={containerRef}
+            sx={{ width: '100%', height: '80vh', position: 'relative' }}
+        >
             <ReactFlow
                 nodes={nodesWithSelection}
                 edges={edgesWithSelection}

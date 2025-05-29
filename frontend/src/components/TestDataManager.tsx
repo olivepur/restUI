@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     Box,
     Button,
@@ -23,6 +23,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import AddIcon from '@mui/icons-material/Add';
 import { TestCase, Transaction, RestOperation, TransactionStatus, RequestFileContent } from '../types/TestData';
 import axios from 'axios';
+import { useResizeObserver } from '../hooks/useResizeObserver';
 
 const API_BASE_URL = 'http://localhost:8080/api/testdata';
 
@@ -35,6 +36,20 @@ export const TestDataManager: React.FC<TestDataManagerProps> = ({ transactions, 
     const [error, setError] = useState<string>('');
     const [copySuccess, setCopySuccess] = useState<boolean>(false);
     const [expandedTransaction, setExpandedTransaction] = useState<string | null>(null);
+
+    // Add resize observer for the container with useCallback
+    const handleResize = useCallback((entry: ResizeObserverEntry) => {
+        // Only trigger resize if dimensions actually changed
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+            // Use RAF to batch resize events
+            requestAnimationFrame(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+        }
+    }, []);
+
+    const containerRef = useResizeObserver(handleResize, 250);
 
     const extractRequestInfo = (content: string): { operation: RestOperation; path: string; name: string } | null => {
         try {
@@ -263,7 +278,7 @@ export const TestDataManager: React.FC<TestDataManagerProps> = ({ transactions, 
 
     return (
         <Container maxWidth="lg">
-            <Box sx={{ my: 4 }}>
+            <Box ref={containerRef} sx={{ my: 4 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography variant="h4" component="h1">
                         Test Data Manager
