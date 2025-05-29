@@ -31,15 +31,16 @@ export const SystemNode: React.FC<NodeProps<SystemNodeData>> = ({
     return (
         <Box
             sx={{
-                padding: 2,
+                padding: 1,
                 borderRadius: 1,
-                minWidth: 200,
+                minWidth: 100,
+                maxWidth: 150,
                 ...defaultNodeStyles,
                 ...(selected ? selectedNodeStyles : {}),
             }}
         >
             <Handle type="target" position={Position.Top} />
-            <Box display="flex" alignItems="center" justifyContent="space-between">
+            <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ minHeight: 32 }}>
                 {isEditing ? (
                     <TextField
                         value={editedLabel}
@@ -51,31 +52,54 @@ export const SystemNode: React.FC<NodeProps<SystemNodeData>> = ({
                                 handleSave();
                             }
                         }}
-                        sx={{ flex: 1, mr: 1 }}
+                        sx={{ 
+                            flex: 1,
+                            mr: 0.5,
+                            '& .MuiInputBase-input': {
+                                padding: '2px 4px',
+                                fontSize: '0.875rem'
+                            }
+                        }}
                     />
                 ) : (
-                    <Typography variant="body1" sx={{ flex: 1 }}>
+                    <Typography 
+                        variant="body2" 
+                        sx={{ 
+                            flex: 1,
+                            fontSize: '0.875rem',
+                            fontWeight: 500
+                        }}
+                    >
                         {data.label}
                     </Typography>
                 )}
-                <Box>
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
                     {isEditing ? (
-                        <IconButton size="small" onClick={handleSave}>
-                            <SaveIcon fontSize="small" />
+                        <IconButton 
+                            size="small" 
+                            onClick={handleSave}
+                            sx={{ padding: 0.5 }}
+                        >
+                            <SaveIcon sx={{ fontSize: '1rem' }} />
                         </IconButton>
                     ) : (
-                        <IconButton size="small" onClick={() => setIsEditing(true)}>
-                            <EditIcon fontSize="small" />
+                        <IconButton 
+                            size="small" 
+                            onClick={() => setIsEditing(true)}
+                            sx={{ padding: 0.5 }}
+                        >
+                            <EditIcon sx={{ fontSize: '1rem' }} />
                         </IconButton>
                     )}
-                    <IconButton size="small" onClick={handleDelete}>
-                        <DeleteIcon fontSize="small" />
+                    <IconButton 
+                        size="small" 
+                        onClick={handleDelete}
+                        sx={{ padding: 0.5 }}
+                    >
+                        <DeleteIcon sx={{ fontSize: '1rem' }} />
                     </IconButton>
                 </Box>
             </Box>
-            <Typography variant="caption" color="textSecondary">
-                {data.type}
-            </Typography>
             <Handle type="source" position={Position.Bottom} />
         </Box>
     );

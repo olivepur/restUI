@@ -1,0 +1,24 @@
+import React from 'react';
+import { Stack, Typography } from '@mui/material';
+import { AddSystemButton } from './AddSystemButton';
+
+interface ToolbarProps {
+    onAddSystem: (name: string) => void;
+    selectedTransactionPath?: string;
+}
+
+export const Toolbar: React.FC<ToolbarProps> = ({
+    onAddSystem,
+    selectedTransactionPath
+}) => {
+    return (
+        <Stack direction="row" spacing={2} alignItems="center">
+            <AddSystemButton onAddSystem={onAddSystem} />
+            {selectedTransactionPath && (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    {selectedTransactionPath}
+                </Typography>
+            )}
+        </Stack>
+    );
+}; 

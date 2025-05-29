@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -14,18 +14,74 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { TransactionHistory } from '../components/TransactionHistory';
-import { SavedTransaction } from '../types/FlowTypes';
+import type { SavedTransaction } from '../components/FlowchartEditor/types';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 export const TransactionsHistoryPage: React.FC = () => {
     const navigate = useNavigate();
     const [selectedTransaction, setSelectedTransaction] = useState<SavedTransaction | null>(null);
     
-    // This would typically come from your global state management (Redux/Context)
+    // Load transactions from localStorage with debug logging
     const [transactions, setTransactions] = useState<SavedTransaction[]>(() => {
+        console.log('Loading transactions from localStorage');
         const saved = localStorage.getItem('savedTransactions');
-        return saved ? JSON.parse(saved) : [];
+        console.log('Raw localStorage data:', saved);
+        try {
+            const parsedTransactions = saved ? JSON.parse(saved) : [];
+            console.log('Parsed transactions:', parsedTransactions);
+            return parsedTransactions;
+        } catch (error) {
+            console.error('Error parsing transactions:', error);
+            return [];
+        }
     });
+
+    // Reload transactions when the component mounts or when localStorage changes
+    useEffect(() => {
+        const loadTransactions = () => {
+            console.log('Loading transactions');
+            const saved = localStorage.getItem('savedTransactions');
+            if (saved) {
+                try {
+                    const parsedTransactions = JSON.parse(saved);
+                    console.log('Loaded transactions:', parsedTransactions);
+                    setTransactions(parsedTransactions);
+                } catch (error) {
+                    console.error('Error parsing transactions:', error);
+                }
+            }
+        };
+
+        // Handle storage event
+        const handleStorageChange = (event: StorageEvent) => {
+            console.log('Storage change event:', event);
+            if (event.key === 'savedTransactions' || event.key === null) {
+                loadTransactions();
+            }
+        };
+
+        // Handle custom event
+        const handleCustomEvent = (event: Event) => {
+            console.log('Custom storage event:', event);
+            const customEvent = event as CustomEvent<{ key: string }>;
+            if (customEvent.detail?.key === 'savedTransactions') {
+                loadTransactions();
+            }
+        };
+
+        // Listen for both storage and custom events
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('localStorageUpdated', handleCustomEvent as EventListener);
+
+        // Initial load
+        loadTransactions();
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('localStorageUpdated', handleCustomEvent as EventListener);
+        };
+    }, []);
 
     const handleViewTransaction = (transaction: SavedTransaction) => {
         setSelectedTransaction(transaction);
@@ -53,6 +109,23 @@ export const TransactionsHistoryPage: React.FC = () => {
         // showNotification('Transaction deleted successfully');
     };
 
+    const reloadTransactions = () => {
+        console.log('Manually reloading transactions');
+        const saved = localStorage.getItem('savedTransactions');
+        if (saved) {
+            try {
+                const parsedTransactions = JSON.parse(saved);
+                console.log('Reloaded transactions:', parsedTransactions.length, 'transactions found');
+                console.log('Transaction data:', parsedTransactions);
+                setTransactions(parsedTransactions);
+            } catch (error) {
+                console.error('Error reloading transactions:', error);
+            }
+        } else {
+            console.log('No saved transactions found');
+        }
+    };
+
     return (
         <Box sx={{ height: '100vh', bgcolor: 'background.default' }}>
             {/* Header */}
@@ -72,6 +145,13 @@ export const TransactionsHistoryPage: React.FC = () => {
                     <Typography variant="h5">
                         Transactions History
                     </Typography>
+                    <Box sx={{ flexGrow: 1 }} />
+                    <Button
+                        startIcon={<RefreshIcon />}
+                        onClick={reloadTransactions}
+                    >
+                        Refresh
+                    </Button>
                 </Stack>
             </Box>
 

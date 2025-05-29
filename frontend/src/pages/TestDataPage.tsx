@@ -3,6 +3,8 @@ import { Box, Tab, Tabs, Typography } from '@mui/material';
 import { TestDataManager } from '../components/TestDataManager';
 import { FlowchartEditor } from '../components/FlowchartEditor';
 import { Transaction } from '../types/TestData';
+import { SavedTransaction } from '../components/FlowchartEditor/types';
+import { v4 as uuidv4 } from 'uuid';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -29,6 +31,52 @@ function TabPanel(props: TabPanelProps) {
         </div>
     );
 }
+
+const convertToSavedTransaction = (transaction: Transaction): SavedTransaction => {
+    return {
+        id: transaction.id,
+        transactionId: transaction.id,
+        sourceNode: 'System A',
+        targetNode: 'System B',
+        status: transaction.status === 'PENDING' ? 'Not Run' : 'Completed',
+        timestamp: new Date().toISOString(),
+        request: {
+            method: transaction.operation,
+            path: transaction.requestPath,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        },
+        test: {
+            script: transaction.generatedScript || '',
+            enabled: true,
+            result: 'Not Tested'
+        },
+        nodes: [
+            {
+                id: `node-${uuidv4()}`,
+                label: 'System A',
+                type: 'system',
+                position: { x: 100, y: 100 }
+            },
+            {
+                id: `node-${uuidv4()}`,
+                label: 'System B',
+                type: 'system',
+                position: { x: 300, y: 100 }
+            }
+        ],
+        edges: [
+            {
+                id: `edge-${uuidv4()}`,
+                source: 'System A',
+                target: 'System B',
+                operation: transaction.operation,
+                path: transaction.requestPath
+            }
+        ]
+    };
+};
 
 export const TestDataPage: React.FC = () => {
     const [currentTab, setCurrentTab] = useState(0);
@@ -65,7 +113,7 @@ export const TestDataPage: React.FC = () => {
             
             <TabPanel value={currentTab} index={1}>
                 <FlowchartEditor
-                    transactions={transactions}
+                    transactions={transactions.map(convertToSavedTransaction)}
                     onRunTransaction={handleRunTransaction}
                 />
             </TabPanel>

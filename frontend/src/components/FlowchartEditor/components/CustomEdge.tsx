@@ -1,7 +1,7 @@
 import React from 'react';
 import { EdgeProps, getSmoothStepPath } from 'reactflow';
 import { TransactionEdgeData } from '../types';
-import { edgeLabelStyles } from '../styles';
+import { edgeLabelStyles, edgeStyles, successEdgeStyles, failedEdgeStyles, runningEdgeStyles } from '../styles';
 
 export const CustomEdge: React.FC<EdgeProps<TransactionEdgeData>> = ({
     id,
@@ -13,7 +13,8 @@ export const CustomEdge: React.FC<EdgeProps<TransactionEdgeData>> = ({
     targetPosition,
     style = {},
     markerEnd,
-    label
+    label,
+    data
 }) => {
     const [edgePath, labelX, labelY] = getSmoothStepPath({
         sourceX,
@@ -24,18 +25,37 @@ export const CustomEdge: React.FC<EdgeProps<TransactionEdgeData>> = ({
         targetPosition,
     });
 
+    // Determine edge style based on status
+    const getEdgeStyle = () => {
+        if (!data) return { ...edgeStyles };
+        
+        switch (data.status?.toLowerCase()) {
+            case 'success':
+                return { ...successEdgeStyles };
+            case 'failed':
+            case 'error':
+                return { ...failedEdgeStyles };
+            case 'running':
+                return { ...runningEdgeStyles };
+            default:
+                return { ...edgeStyles };
+        }
+    };
+
+    const currentStyle = getEdgeStyle();
+
     return (
         <>
             <path
                 id={id}
                 style={{
+                    ...currentStyle,
                     ...style,
-                    strokeWidth: 2,
                     fill: 'none'
                 }}
                 className="react-flow__edge-path"
                 d={edgePath}
-                markerEnd={style.markerEnd || markerEnd}
+                markerEnd={currentStyle.markerEnd || markerEnd}
             />
             {label && (
                 <text

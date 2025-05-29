@@ -4,8 +4,8 @@ interface ResizeObserverCallback {
     (entry: ResizeObserverEntry): void;
 }
 
-export const useResizeObserver = (callback: ResizeObserverCallback, debounceMs: number = 100) => {
-    const elementRef = useRef<HTMLElement | null>(null);
+export const useResizeObserver = <T extends HTMLElement = HTMLElement>(callback: ResizeObserverCallback, debounceMs: number = 100) => {
+    const elementRef = useRef<T | null>(null);
     const observerRef = useRef<ResizeObserver | null>(null);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
     const frameRef = useRef<number | null>(null);

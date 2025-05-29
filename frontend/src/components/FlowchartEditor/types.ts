@@ -1,7 +1,7 @@
-import { Edge, Node } from 'reactflow';
-import { Transaction } from '../../types/TestData';
+import { Node, Edge } from 'reactflow';
 
-export type EdgeStatus = 'running' | 'open' | 'pending' | 'stopped' | 'error' | 'performed';
+// Export all types as named exports
+export type EdgeStatus = 'open' | 'performed' | 'error' | 'pending' | 'running' | 'stopped' | 'success' | 'failed';
 export type TestStatus = 'Not Tested' | 'Testing' | 'Passed' | 'Failed';
 
 export interface SystemNodeData {
@@ -15,12 +15,14 @@ export interface TransactionEdgeData {
     transactionId: string;
     operation: string;
     path: string;
-    status?: EdgeStatus;
-    testStatus?: string;
-    onPlay: (ids: string | string[]) => void;
-    onStop: () => void;
-    onEdit: () => void;
-    onRemove: () => void;
+    status: EdgeStatus;
+    testStatus: TestStatus;
+    timestamp: string;
+    requestBody?: any;
+    onPlay: (ids: string | string[]) => void | Promise<void>;
+    onStop: (id: string) => void;
+    onEdit: (id: string) => void;
+    onRemove: (id: string) => void;
 }
 
 export type SystemNode = Node<SystemNodeData>;
@@ -48,13 +50,35 @@ export interface TransactionDetails {
     response?: {
         status: number;
         headers: Record<string, string>;
-        body?: any;
+        body: any;
     };
     loading: boolean;
     test?: {
         script: string;
         enabled: boolean;
+        result?: string;
     };
+    allResponses?: Array<{
+        path: string;
+        status: number;
+        headers: Record<string, string>;
+        body: any;
+    }>;
+}
+
+export interface SavedTransactionNode {
+    id: string;
+    label: string;
+    type: string;
+    position: { x: number; y: number };
+}
+
+export interface SavedTransactionEdge {
+    id: string;
+    source: string;
+    target: string;
+    operation: string;
+    path: string;
 }
 
 export interface SavedTransaction {
@@ -75,7 +99,7 @@ export interface SavedTransaction {
         headers: Record<string, string>;
         body?: any;
     };
-    test: {
+    test?: {
         script: string;
         enabled: boolean;
         result?: string;
@@ -83,15 +107,23 @@ export interface SavedTransaction {
     selectedElements?: {
         nodeIds: string[];
         edgeIds: string[];
-        nodes: Node<SystemNodeData>[];
-        edges: Edge<TransactionEdgeData>[];
+        nodes: SystemNode[];
+        edges: TransactionEdge[];
     };
+    nodes: SavedTransactionNode[];
+    edges: SavedTransactionEdge[];
+    allResponses?: Array<{
+        path: string;
+        status: number;
+        headers: Record<string, string>;
+        body: any;
+    }>;
 }
 
 export interface FlowchartEditorProps {
     transactions: SavedTransaction[];
     onRunTransaction: (transactionId: string) => void;
-    onSaveTransaction: (transaction: SavedTransaction) => void;
+    onSaveTransaction?: (transaction: SavedTransaction) => void;
 }
 
 export interface TransactionResponse {
