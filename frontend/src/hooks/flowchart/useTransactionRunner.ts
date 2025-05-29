@@ -25,6 +25,17 @@ export const useTransactionRunner = ({
         return result;
     };
 
+    const getRelativeUrl = (url: string): string => {
+        try {
+            const fullUrl = new URL(url);
+            // Keep the /vlmdm path as it's handled by our proxy
+            return fullUrl.pathname;
+        } catch {
+            // If the URL is already relative, return it as is
+            return url.startsWith('/') ? url : `/${url}`;
+        }
+    };
+
     const runTransaction = useCallback(async (edgeIds: string | string[]) => {
         const edgeIdArray = Array.isArray(edgeIds) ? edgeIds : [edgeIds];
         const responses: Array<{
@@ -51,15 +62,18 @@ export const useTransactionRunner = ({
                 }
 
                 try {
+                    const url = edge.data?.path || '';
+                    const relativeUrl = getRelativeUrl(url);
+                    console.log('Making request to:', relativeUrl);
+
                     // Make the actual API call
                     const response = await axios({
                         method: edge.data?.operation || 'GET',
-                        url: edge.data?.path || '',
+                        url: relativeUrl,
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': 'Bearer sample-token'
-                        },
-                        data: edge.data?.requestBody
+                            'Accept': 'application/json'
+                        }
                     });
 
                     // Update transaction details with successful response
