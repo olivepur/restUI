@@ -578,7 +578,7 @@ const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
                     open={true}
                     onClose={() => setSelectedEdge(null)}
                     edgeData={selectedEdge.data}
-                    onRequestChange={(data: { method: string; url: string; body?: any }) => {
+                    onRequestChange={(data: { method: string; url: string; body?: any; headers?: Record<string, string> }) => {
                         if (!selectedEdge.data) return;
                         
                         const updatedEdge: Edge<TransactionEdgeData> = {
@@ -588,6 +588,7 @@ const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
                                 operation: data.method,
                                 path: data.url,
                                 requestBody: data.body,
+                                headers: data.headers,
                                 // Preserve required fields
                                 transactionId: selectedEdge.data.transactionId,
                                 status: selectedEdge.data.status,
@@ -603,6 +604,12 @@ const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
                         setEdges(edges => edges.map(edge => 
                             edge.id === selectedEdge.id ? updatedEdge : edge
                         ));
+                        setSelectedEdge(null);
+                    }}
+                    onRunTransaction={() => handlePlayTransaction([selectedEdge.id])}
+                    onSaveTransaction={handleSaveClick}
+                    onDeleteTransaction={() => {
+                        setEdges(edges => edges.filter(e => e.id !== selectedEdge.id));
                         setSelectedEdge(null);
                     }}
                 />

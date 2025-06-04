@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { FlowchartEditor } from './components/FlowchartEditor';
 import { TransactionsHistoryPage } from './pages/TransactionsHistoryPage';
+import { ScenarioDesignerPage } from './pages/ScenarioDesignerPage';
+import { NavigationBar } from './components/common/NavigationBar';
 import type { SavedTransaction } from './components/FlowchartEditor/types';
-import { Snackbar, Alert } from '@mui/material';
+import { Snackbar, Alert, Box } from '@mui/material';
 
 const App: React.FC = () => {
     const [snackbar, setSnackbar] = useState({
@@ -45,32 +47,41 @@ const App: React.FC = () => {
 
     return (
         <Router>
-            <Routes>
-                <Route 
-                    path="/" 
-                    element={
-                        <FlowchartEditor 
-                            transactions={[]}
-                            onRunTransaction={() => {}}
-                            onSaveTransaction={handleSaveTransaction}
+            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+                <NavigationBar />
+                <Box sx={{ flexGrow: 1 }}>
+                    <Routes>
+                        <Route 
+                            path="/" 
+                            element={
+                                <FlowchartEditor 
+                                    transactions={[]}
+                                    onRunTransaction={() => {}}
+                                    onSaveTransaction={handleSaveTransaction}
+                                />
+                            } 
                         />
-                    } 
-                />
-                <Route 
-                    path="/transactions-history" 
-                    element={<TransactionsHistoryPage />} 
-                />
-            </Routes>
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={6000}
-                onClose={handleCloseSnackbar}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity}>
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
+                        <Route 
+                            path="/transactions-history" 
+                            element={<TransactionsHistoryPage />} 
+                        />
+                        <Route 
+                            path="/scenario-designer" 
+                            element={<ScenarioDesignerPage />} 
+                        />
+                    </Routes>
+                </Box>
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
+                    onClose={handleCloseSnackbar}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                >
+                    <Alert onClose={handleCloseSnackbar} severity={snackbar.severity}>
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
+            </Box>
         </Router>
     );
 };

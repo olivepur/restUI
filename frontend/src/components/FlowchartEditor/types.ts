@@ -19,6 +19,7 @@ export interface TransactionEdgeData {
     testStatus: TestStatus;
     timestamp: string;
     requestBody?: any;
+    headers?: Record<string, string>;
     onPlay: (ids: string | string[]) => void | Promise<void>;
     onStop: (id: string) => void;
     onEdit: (id: string) => void;

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Stack, Typography, Button, Box, TextField, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import HistoryIcon from '@mui/icons-material/History';
+import ApiIcon from '@mui/icons-material/Api';
 import { AddSystemButton } from './AddSystemButton';
 import AddIcon from '@mui/icons-material/Add';
 
@@ -17,14 +18,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     onViewHistory
 }) => {
     const navigate = useNavigate();
-    const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-    const [systemName, setSystemName] = useState('');
+    const [isAddSystemDialogOpen, setIsAddSystemDialogOpen] = useState(false);
+    const [newSystemName, setNewSystemName] = useState('');
 
     const handleAddSystem = () => {
-        if (systemName.trim()) {
-            onAddSystem(systemName.trim());
-            setSystemName('');
-            setIsAddDialogOpen(false);
+        if (newSystemName.trim()) {
+            onAddSystem(newSystemName.trim());
+            setNewSystemName('');
+            setIsAddSystemDialogOpen(false);
         }
     };
 
@@ -33,47 +34,42 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             sx={{
                 position: 'absolute',
                 top: 20,
-                left: 20,
-                zIndex: 1000,
-                width: 'auto'
+                right: 20,
+                zIndex: 4,
+                display: 'flex',
+                gap: 1,
+                backgroundColor: 'white',
+                padding: 1,
+                borderRadius: 1,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
         >
-            <Stack 
-                direction="row" 
-                spacing={2} 
-                alignItems="center"
-                sx={{
-                    bgcolor: 'background.paper',
-                    p: 2,
-                    borderRadius: 2,
-                    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
-                }}
+            <Button
+                variant="contained"
+                color="primary"
+                startIcon={<AddIcon />}
+                onClick={() => setIsAddSystemDialogOpen(true)}
             >
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setIsAddDialogOpen(true)}
-                >
-                    Add System
-                </Button>
-                <Button
-                    variant="outlined"
-                    startIcon={<HistoryIcon />}
-                    onClick={onViewHistory}
-                >
-                    History
-                </Button>
-                {selectedTransactionPath && (
-                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {selectedTransactionPath}
-                    </Typography>
-                )}
-            </Stack>
+                Add System
+            </Button>
+            <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<HistoryIcon />}
+                onClick={onViewHistory}
+            >
+                History
+            </Button>
+            <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<ApiIcon />}
+                onClick={() => navigate('/scenario-designer')}
+            >
+                Scenario Designer
+            </Button>
 
-            <Dialog 
-                open={isAddDialogOpen} 
-                onClose={() => setIsAddDialogOpen(false)}
-            >
+            <Dialog open={isAddSystemDialogOpen} onClose={() => setIsAddSystemDialogOpen(false)}>
                 <DialogTitle>Add New System</DialogTitle>
                 <DialogContent>
                     <TextField
@@ -81,9 +77,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                         margin="dense"
                         label="System Name"
                         fullWidth
-                        variant="outlined"
-                        value={systemName}
-                        onChange={(e) => setSystemName(e.target.value)}
+                        value={newSystemName}
+                        onChange={(e) => setNewSystemName(e.target.value)}
                         onKeyPress={(e) => {
                             if (e.key === 'Enter') {
                                 handleAddSystem();
@@ -92,8 +87,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleAddSystem} variant="contained">Add</Button>
+                    <Button onClick={() => setIsAddSystemDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={handleAddSystem} variant="contained" color="primary">
+                        Add
+                    </Button>
                 </DialogActions>
             </Dialog>
         </Box>
