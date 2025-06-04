@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.List;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/proxy")
@@ -21,6 +22,9 @@ public class ProxyController {
 
     @Autowired
     private RestTemplate restTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private static final String BASE_URL = "https://api.int.group-vehicle-file.com";
 
@@ -32,11 +36,9 @@ public class ProxyController {
             HttpServletRequest request) {
         
         try {
-            // Get the full request URI and extract the part after /api/proxy
             String requestUri = request.getRequestURI();
             String proxyPath = requestUri.substring(requestUri.indexOf("/api/proxy") + "/api/proxy".length());
             
-            // Build the target URL
             String targetUrl = UriComponentsBuilder
                 .fromHttpUrl(BASE_URL)
                 .path(proxyPath)
@@ -48,7 +50,6 @@ public class ProxyController {
             logger.debug("Request method: {}", method);
             logger.debug("Request headers: {}", headers);
             
-            // Forward all necessary headers
             HttpHeaders proxyHeaders = new HttpHeaders();
             if (headers.getFirst("Authorization") != null) {
                 String authHeader = headers.getFirst("Authorization");
@@ -58,10 +59,8 @@ public class ProxyController {
             proxyHeaders.set("Accept", "application/json");
             proxyHeaders.set("Content-Type", "application/json");
             
-            // Create the request entity
             HttpEntity<String> httpEntity = new HttpEntity<>(body, proxyHeaders);
             
-            // Make the request to the target system
             logger.info("Sending request to target system...");
             ResponseEntity<String> response = restTemplate.exchange(
                 targetUrl,
@@ -72,9 +71,26 @@ public class ProxyController {
             
             logger.info("Received response with status: {}", response.getStatusCode());
             logger.debug("Response headers: {}", response.getHeaders());
-            logger.debug("Response body: {}", response.getBody());
             
-            // Create new headers without CORS headers from the external API
+            String responseBody = response.getBody();
+            // Validate JSON response
+            if (responseBody != null) {
+                try {
+                    // Try to parse the response as JSON to validate it
+                    objectMapper.readTree(responseBody);
+                    logger.debug("Response body is valid JSON: {}", responseBody);
+                } catch (Exception e) {
+                    logger.error("Invalid JSON response received: {}", responseBody);
+                    logger.error("JSON parsing error: {}", e.getMessage());
+                    return ResponseEntity
+                        .status(500)
+                        .body("{\"error\": \"Invalid JSON response from external API\", \"details\": \"" + e.getMessage() + "\"}");
+                }
+            } else {
+                logger.warn("Received null response body");
+                responseBody = "{}";  // Return empty JSON object instead of null
+            }
+            
             HttpHeaders responseHeaders = new HttpHeaders();
             response.getHeaders().forEach((key, value) -> {
                 if (!isCorsHeader(key)) {
@@ -85,12 +101,25 @@ public class ProxyController {
             return ResponseEntity
                 .status(response.getStatusCode())
                 .headers(responseHeaders)
-                .body(response.getBody());
+                .body(responseBody);
             
         } catch (HttpStatusCodeException e) {
             logger.error("Error from target system: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
+            String errorBody = e.getResponseBodyAsString();
             
-            // Create new headers without CORS headers from the error response
+            // Try to ensure the error response is valid JSON
+            try {
+                if (errorBody != null && !errorBody.isEmpty()) {
+                    objectMapper.readTree(errorBody);
+                } else {
+                    errorBody = "{\"error\": \"Empty response from external API\"}";
+                }
+            } catch (Exception jsonError) {
+                logger.error("Error response is not valid JSON: {}", jsonError.getMessage());
+                errorBody = "{\"error\": \"Invalid JSON in error response\", \"originalError\": \"" + 
+                           e.getStatusCode() + ": " + e.getMessage() + "\"}";
+            }
+            
             HttpHeaders responseHeaders = new HttpHeaders();
             e.getResponseHeaders().forEach((key, value) -> {
                 if (!isCorsHeader(key)) {
@@ -101,10 +130,12 @@ public class ProxyController {
             return ResponseEntity
                 .status(e.getStatusCode())
                 .headers(responseHeaders)
-                .body(e.getResponseBodyAsString());
+                .body(errorBody);
         } catch (Exception e) {
             logger.error("Error proxying request: {}", e.getMessage(), e);
-            throw e;
+            return ResponseEntity
+                .status(500)
+                .body("{\"error\": \"Internal server error\", \"message\": \"" + e.getMessage() + "\"}");
         }
     }
     
