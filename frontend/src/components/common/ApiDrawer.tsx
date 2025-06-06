@@ -11,10 +11,10 @@ import {
     Paper,
     styled,
     Chip,
-    Tabs,
-    Tab
+    Tooltip
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 
 interface ApiLog {
     timestamp: string;
@@ -32,6 +32,7 @@ interface ApiLog {
 interface ApiDrawerProps {
     open: boolean;
     onClose: () => void;
+    onClearAll: () => void;
     apiLogs: ApiLog[];
 }
 
@@ -49,10 +50,10 @@ const CodeBlock = styled(Paper)(({ theme }) => ({
     backgroundColor: theme.palette.grey[100],
     fontFamily: 'monospace',
     overflow: 'auto',
-    maxHeight: '200px',
+    maxHeight: '400px',
 }));
 
-export const ApiDrawer: React.FC<ApiDrawerProps> = ({ open, onClose, apiLogs }) => {
+export const ApiDrawer: React.FC<ApiDrawerProps> = ({ open, onClose, onClearAll, apiLogs }) => {
     const getStatusColor = (status: number) => {
         if (status >= 200 && status < 300) return 'success';
         if (status >= 400) return 'error';
@@ -67,10 +68,10 @@ export const ApiDrawer: React.FC<ApiDrawerProps> = ({ open, onClose, apiLogs }) 
             onClose={onClose}
             variant="persistent"
             sx={{
-                width: 400,
+                width: 600,
                 flexShrink: 0,
                 '& .MuiDrawer-paper': {
-                    width: 400,
+                    width: 600,
                     boxSizing: 'border-box',
                 },
             }}
@@ -79,77 +80,79 @@ export const ApiDrawer: React.FC<ApiDrawerProps> = ({ open, onClose, apiLogs }) 
                 <Typography variant="h6" component="div">
                     API Logs
                 </Typography>
-                <IconButton onClick={onClose}>
-                    <CloseIcon />
-                </IconButton>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    {apiLogs.length > 0 && (
+                        <Tooltip title="Clear all logs">
+                            <IconButton onClick={onClearAll} color="error" size="small">
+                                <DeleteSweepIcon />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                    <IconButton onClick={onClose} size="small">
+                        <CloseIcon />
+                    </IconButton>
+                </Box>
             </DrawerHeader>
             <List>
-                {apiLogs.map((log, index) => (
-                    <React.Fragment key={index}>
-                        <ListItem>
-                            <ListItemText
-                                primary={
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <Typography color="primary" fontWeight="bold">
-                                            {log.method} {log.url}
-                                        </Typography>
-                                        <Typography variant="caption" color="textSecondary">
-                                            {log.timestamp}
-                                        </Typography>
-                                    </Box>
-                                }
-                                secondary={
-                                    <Box>
-                                        <Typography variant="subtitle2" sx={{ mt: 1 }}>Request:</Typography>
-                                        <CodeBlock>
-                                            <pre style={{ margin: 0 }}>
-                                                {JSON.stringify(log.request, null, 2)}
-                                            </pre>
-                                        </CodeBlock>
-                                        <Typography variant="subtitle2" sx={{ mt: 1 }}>Response:</Typography>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                            <Typography variant="body2">Status:</Typography>
-                                            <Chip
-                                                label={log.response.status}
-                                                color={getStatusColor(log.response.status)}
-                                                size="small"
-                                            />
+                {apiLogs.length === 0 ? (
+                    <ListItem>
+                        <ListItemText
+                            primary={
+                                <Typography color="textSecondary" align="center">
+                                    No API logs yet
+                                </Typography>
+                            }
+                        />
+                    </ListItem>
+                ) : (
+                    apiLogs.map((log, index) => (
+                        <React.Fragment key={index}>
+                            <ListItem>
+                                <ListItemText
+                                    primary={
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Typography color="primary" fontWeight="bold">
+                                                {log.method} {log.url}
+                                            </Typography>
+                                            <Typography variant="caption" color="textSecondary">
+                                                {log.timestamp}
+                                            </Typography>
                                         </Box>
-                                        <CodeBlock>
-                                            <pre style={{ margin: 0 }}>
-                                                {JSON.stringify(log.response, null, 2)}
-                                            </pre>
-                                        </CodeBlock>
-                                        {log.test && (
-                                            <>
-                                                <Typography variant="subtitle2" sx={{ mt: 1 }}>Test:</Typography>
-                                                <Box sx={{ mb: 1 }}>
-                                                    <Typography variant="body2">Script:</Typography>
+                                    }
+                                    secondary={
+                                        <Box>
+                                            {log.method !== 'GENERATE' && (
+                                                <>
+                                                    <Typography variant="subtitle2" sx={{ mt: 1 }}>Request:</Typography>
                                                     <CodeBlock>
                                                         <pre style={{ margin: 0 }}>
-                                                            {log.test.script}
+                                                            {JSON.stringify(log.request, null, 2)}
                                                         </pre>
                                                     </CodeBlock>
-                                                </Box>
-                                                {log.test.result && (
-                                                    <Box>
-                                                        <Typography variant="body2">Result:</Typography>
-                                                        <CodeBlock>
-                                                            <pre style={{ margin: 0 }}>
-                                                                {log.test.result}
-                                                            </pre>
-                                                        </CodeBlock>
+                                                    <Typography variant="subtitle2" sx={{ mt: 1 }}>Response:</Typography>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                                        <Typography variant="body2">Status:</Typography>
+                                                        <Chip
+                                                            label={log.response.status}
+                                                            color={getStatusColor(log.response.status)}
+                                                            size="small"
+                                                        />
                                                     </Box>
-                                                )}
-                                            </>
-                                        )}
-                                    </Box>
-                                }
-                            />
-                        </ListItem>
-                        <Divider />
-                    </React.Fragment>
-                ))}
+                                                    <CodeBlock>
+                                                        <pre style={{ margin: 0 }}>
+                                                            {JSON.stringify(log.response, null, 2)}
+                                                        </pre>
+                                                    </CodeBlock>
+                                                </>
+                                            )}
+                                        </Box>
+                                    }
+                                />
+                            </ListItem>
+                            <Divider />
+                        </React.Fragment>
+                    ))
+                )}
             </List>
         </Drawer>
     );

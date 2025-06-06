@@ -49,8 +49,15 @@ const App: React.FC = () => {
             test: response.test
         };
         setApiLogs(prev => [newLog, ...prev]);
-        // Automatically show the drawer when a new API call is logged
-        setApiDrawerOpen(true);
+        // Only show drawer for non-GENERATE methods
+        if (method !== 'GENERATE') {
+            setApiDrawerOpen(true);
+        }
+    };
+
+    const handleClearApiLogs = () => {
+        setApiLogs([]);
+        showNotification('API logs cleared', 'info');
     };
 
     const handleSaveTransaction = async (transaction: SavedTransaction) => {
@@ -111,6 +118,7 @@ const App: React.FC = () => {
                     <ApiDrawer
                         open={apiDrawerOpen}
                         onClose={() => setApiDrawerOpen(false)}
+                        onClearAll={handleClearApiLogs}
                         apiLogs={apiLogs}
                     />
                 </Box>
