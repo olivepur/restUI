@@ -22,6 +22,12 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { 
+    GeneratedScenario, 
+    handlePlayScenario, 
+    handleEditScenario,
+    handleGenerateScenarios
+} from '../components/scenarioGenerator';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const STORAGE_KEY = 'scenarioDesigner';
@@ -39,42 +45,7 @@ interface Interaction {
     scenarios?: GeneratedScenario[];
 }
 
-interface DeviceContent {
-    semanticId: number;
-    value: string;
-}
 
-interface Device {
-    number: string;
-    indicatorId: number;
-    diagnosticAddress16bit: string;
-    rateFlag: string;
-    type: string;
-    content: DeviceContent[];
-}
-
-interface VehicleResponse {
-    vehicleDeviceInformation: {
-        value: Device[];
-        status: number;
-        message: string;
-    };
-    ecu: {
-        value: any[];
-        status: number;
-        message: string;
-    };
-    nonEcu: {
-        value: any[];
-        status: string;
-        message: string;
-    };
-}
-
-interface GeneratedScenario {
-    title: string;
-    content: string;
-}
 
 export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onApiCall }) => {
     // Load saved state from localStorage
@@ -163,16 +134,6 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
         setExpandedScenario(isExpanded ? panel : false);
     };
 
-    const handlePlayScenario = (scenario: GeneratedScenario) => {
-        // TODO: Implement scenario execution
-        console.log('Playing scenario:', scenario.title);
-    };
-
-    const handleEditScenario = (scenario: GeneratedScenario) => {
-        // TODO: Implement scenario editing
-        console.log('Editing scenario:', scenario.title);
-    };
-
     const handleDeleteScenario = (scenario: GeneratedScenario) => {
         setInteraction(prev => ({
             ...prev,
@@ -180,186 +141,22 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
         }));
     };
 
-    const extractScenarioTitle = (content: string): string => {
-        const scenarioMatch = content.match(/Scenario:([^\n]+)/);
-        return scenarioMatch ? scenarioMatch[1].trim() : 'Untitled Scenario';
-    };
+    const onGenerateScenarios = () => {
+        const newScenarios = handleGenerateScenarios({
+            onApiCall,
+            method: interaction.method,
+            path: interaction.path,
+            headers: interaction.headers,
+            body: interaction.body,
+            lastResponse: interaction.lastResponse,
+            hasTestedRequest
+        });
 
-    const handleGenerateScenarios = () => {
-        if (!hasTestedRequest) {
-            if (onApiCall) {
-                onApiCall(
-                    interaction.method,
-                    interaction.path,
-                    {
-                        method: interaction.method,
-                        headers: interaction.headers,
-                        body: interaction.method !== 'GET' ? interaction.body : undefined
-                    },
-                    {
-                        status: 400,
-                        headers: {},
-                        body: { error: 'Please test the request before generating scenarios' }
-                    }
-                );
-            }
-            return;
-        }
-
-        try {
-            // Get the last response from the interaction
-            const lastResponse = interaction.lastResponse as VehicleResponse;
-            if (!lastResponse) {
-                throw new Error('No response data available');
-            }
-
-            const vehicle = lastResponse.vehicleDeviceInformation;
-            const ecu = lastResponse.ecu;
-            const nonEcu = lastResponse.nonEcu;
-
-            // Find specific devices from the response
-            const bop = vehicle.value.find(d => d.number === "B0P");
-            const boq = vehicle.value.find(d => d.number === "B0Q");
-
-            const scenarios = [
-                // Feature Overview
-                `Feature: Vehicle Device Information API Tests
-  As an API consumer
-  I want to verify the vehicle device information
-  So that I can ensure the data is correct and complete
-
-  Background:
-    Given the API endpoint is "${interaction.path}"
-    And I am using a valid authentication token
-    And I send a GET request to the endpoint
-`,
-                // Basic Checks
-                `  Scenario: Basic response validation
-    Then the response status code should be 200
-    And the response body should exist
-    And the vehicleDeviceInformation section should be present
-`,
-                // Vehicle Element Validation
-                `  Scenario: Vehicle element validation
-    Then the vehicleDeviceInformation section should:
-      | Property | Value |
-      | status   | ${vehicle.status} |
-    And the vehicleDeviceInformation should contain a list of devices
-`,
-                // B0P Device Tests
-                ...(bop ? [`  Scenario: Validate B0P device information
-    When I find the device with number "B0P"
-    Then the device should have the following properties:
-      | Property             | Value |
-      | number              | ${bop.number} |
-      | indicatorId         | ${bop.indicatorId} |
-      | diagnosticAddress   | ${bop.diagnosticAddress16bit} |
-      | rateFlag           | ${bop.rateFlag} |
-    And the device type should be empty
-    And the device should have semantic content:
-      | SemanticId | Value |
-${bop.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.value.trim()} |`).join('\n')}`] : []),
-
-                // B0Q Device Tests
-                ...(boq ? [`  Scenario: Validate B0Q device information
-    When I find the device with number "B0Q"
-    Then the device should have the following properties:
-      | Property             | Value |
-      | number              | ${boq.number} |
-      | indicatorId         | ${boq.indicatorId} |
-      | diagnosticAddress   | ${boq.diagnosticAddress16bit} |
-      | rateFlag           | ${boq.rateFlag} |
-    And the device type should be empty
-    And the device should have semantic content:
-      | SemanticId | Value |
-${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.value.trim()} |`).join('\n')}
-
-    Scenario: Validate B0Q revision information
-    When I find the device with number "B0Q"
-    And I get the revision from environment variable "Revision0001a"
-    Then the semantic content with ID 96 should match the revision`] : []),
-
-                // ECU Error Tests
-                `  Scenario: ECU error validation
-    Then the ECU section should have the following properties:
-      | Property | Value |
-      | status   | ${ecu.status} |
-      | message  | ${ecu.message} |
-    And the ECU value list should be empty`,
-
-                // Non-ECU Error Tests
-                `  Scenario: Non-ECU error validation
-    Then the Non-ECU section should have the following properties:
-      | Property | Value |
-      | status   | ${nonEcu.status} |
-      | message  | ${nonEcu.message} |
-    And the Non-ECU value list should be empty`,
-
-                // Environment Variable Test
-                `  Scenario: Environment variable handling
-    When I set the environment variable "variable" to "value1"
-    Then the environment variable "variable" should have value "value1"`
-            ];
-
-            const formattedScenarios: GeneratedScenario[] = scenarios
-                .filter(s => s.trim().startsWith('  Scenario:'))
-                .map(content => ({
-                    title: extractScenarioTitle(content),
-                    content: content.trim()
-                }));
-
-            // Store scenarios in the interaction state
+        if (newScenarios) {
             setInteraction(prev => ({
                 ...prev,
-                scenarios: formattedScenarios
+                scenarios: newScenarios
             }));
-
-            // Log the generated scenarios
-            if (onApiCall) {
-                onApiCall(
-                    'GENERATE',
-                    'scenarios',
-                    {
-                        method: interaction.method,
-                        headers: interaction.headers,
-                        body: interaction.method !== 'GET' ? interaction.body : undefined
-                    },
-                    {
-                        status: 200,
-                        headers: {},
-                        body: {
-                            message: 'Generated test scenarios',
-                            scenarios: formattedScenarios
-                        },
-                        test: {
-                            script: scenarios.join('\n\n'),
-                            enabled: true
-                        }
-                    }
-                );
-            }
-        } catch (error) {
-            // Handle scenario generation error
-            if (onApiCall) {
-                onApiCall(
-                    'GENERATE',
-                    'scenarios',
-                    {
-                        method: interaction.method,
-                        headers: interaction.headers,
-                        body: interaction.method !== 'GET' ? interaction.body : undefined
-                    },
-                    {
-                        status: 400,
-                        headers: {},
-                        body: {
-                            error: 'Failed to generate scenarios',
-                            message: error instanceof Error ? error.message : 'Invalid response format',
-                            details: 'Make sure you have executed a successful API test first'
-                        }
-                    }
-                );
-            }
         }
     };
 
@@ -400,24 +197,25 @@ ${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.va
                 throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}\nResponse: ${errorText}`);
             }
 
-            let data: VehicleResponse | { text: string };
+            let responseData: any;
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
-                data = await response.json() as VehicleResponse;
+                responseData = await response.json();
             } else {
                 const text = await response.text();
                 try {
-                    data = JSON.parse(text) as VehicleResponse;
+                    responseData = JSON.parse(text);
                 } catch (e) {
-                    data = { text };
+                    responseData = { text };
                 }
             }
 
             // Store the response data for scenario generation
             setInteraction(prev => ({
                 ...prev,
-                lastResponse: data
+                lastResponse: responseData
             }));
+            setHasTestedRequest(true);
 
             // Log the API call
             if (onApiCall) {
@@ -428,31 +226,12 @@ ${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.va
                     {
                         status: response.status,
                         headers: Object.fromEntries(response.headers.entries()),
-                        body: data
+                        body: responseData
                     }
                 );
             }
-
-            setHasTestedRequest(true);
         } catch (error) {
-            console.error('Error details:', error);
-            let errorMessage = 'Failed to execute test';
-            
-            if (error instanceof Error) {
-                errorMessage = `Error: ${error.message}`;
-            }
-            
-            const errorResponse = {
-                error: errorMessage,
-                details: 'Check the browser console (F12) for more details',
-                possibleSolutions: [
-                    'Check if your Bearer token is valid',
-                    'Verify the URL is correct and accessible',
-                    'Check the browser console for detailed error messages'
-                ]
-            };
-
-            // Log the failed API call
+            console.error('Error running test:', error);
             if (onApiCall) {
                 onApiCall(
                     interaction.method,
@@ -465,12 +244,10 @@ ${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.va
                     {
                         status: 500,
                         headers: {},
-                        body: errorResponse
+                        body: { error: 'Failed to run test' }
                     }
                 );
             }
-            
-            setHasTestedRequest(false);
         }
     };
 
@@ -485,7 +262,6 @@ ${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.va
                     <Typography variant="h6" gutterBottom>
                         Request Details
                     </Typography>
-
                     <Stack spacing={3}>
                         <FormControl>
                             <InputLabel>Method</InputLabel>
@@ -569,7 +345,7 @@ ${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.va
                             </Button>
                             <Button
                                 variant="contained"
-                                onClick={handleGenerateScenarios}
+                                onClick={onGenerateScenarios}
                                 startIcon={<AddIcon />}
                                 disabled={!hasTestedRequest}
                                 color="secondary"
@@ -606,9 +382,13 @@ ${boq.content.map(c => `      | ${c.semanticId.toString().padStart(10)} | ${c.va
                                             <Tooltip title="Run scenario">
                                                 <IconButton
                                                     size="small"
-                                                    onClick={(e) => {
+                                                    onClick={async (e) => {
                                                         e.stopPropagation();
-                                                        handlePlayScenario(scenario);
+                                                        await handlePlayScenario(scenario, {
+                                                            onApiCall,
+                                                            path: interaction.path,
+                                                            headers: interaction.headers
+                                                        });
                                                     }}
                                                 >
                                                     <PlayArrowIcon />
