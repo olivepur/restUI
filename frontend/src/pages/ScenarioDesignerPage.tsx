@@ -25,7 +25,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { 
     GeneratedScenario, 
     handlePlayScenario, 
-    handleEditScenario,
     handleGenerateScenarios
 } from '../components/scenarioGenerator';
 
@@ -141,14 +140,20 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
         }));
     };
 
+    const handleEditClick = (scenario: GeneratedScenario) => {
+        // TODO: Implement scenario editing
+        console.log('Editing scenario:', scenario.title);
+    };
+
     const onGenerateScenarios = () => {
         const newScenarios = handleGenerateScenarios({
-            onApiCall,
             method: interaction.method,
             path: interaction.path,
             headers: interaction.headers,
             body: interaction.body,
             lastResponse: interaction.lastResponse,
+            includeEnvironmentTests: true,
+            onApiCall,
             hasTestedRequest
         });
 
@@ -158,6 +163,14 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                 scenarios: newScenarios
             }));
         }
+    };
+
+    const handlePlayClick = async (scenario: GeneratedScenario) => {
+        await handlePlayScenario(scenario, {
+            onApiCall,
+            path: interaction.path,
+            headers: interaction.headers
+        });
     };
 
     const runTest = async () => {
@@ -384,11 +397,7 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                                     size="small"
                                                     onClick={async (e) => {
                                                         e.stopPropagation();
-                                                        await handlePlayScenario(scenario, {
-                                                            onApiCall,
-                                                            path: interaction.path,
-                                                            headers: interaction.headers
-                                                        });
+                                                        await handlePlayClick(scenario);
                                                     }}
                                                 >
                                                     <PlayArrowIcon />
@@ -399,7 +408,7 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                                     size="small"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleEditScenario(scenario);
+                                                        handleEditClick(scenario);
                                                     }}
                                                 >
                                                     <EditIcon />
