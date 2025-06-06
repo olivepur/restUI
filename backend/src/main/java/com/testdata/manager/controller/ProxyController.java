@@ -1,147 +1,179 @@
 package com.testdata.manager.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
-import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Collections;
 import java.util.List;
+import org.springframework.web.client.HttpStatusCodeException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/proxy")
+@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class ProxyController {
     private static final Logger logger = LoggerFactory.getLogger(ProxyController.class);
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
+    private static final String TARGET_API = "https://api.int.group-vehicle-file.com";
+    private static final String BEARER_PREFIX = "Bearer ";
 
     @Autowired
-    private RestTemplate restTemplate;
+    public ProxyController(RestTemplate restTemplate, ObjectMapper objectMapper) {
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
+    }
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private String formatAuthorizationHeader(String token) {
+        if (token == null || token.trim().isEmpty()) {
+            return null;
+        }
+        
+        // If token already has Bearer prefix, use it as is
+        if (token.trim().startsWith(BEARER_PREFIX)) {
+            return token.trim();
+        }
+        
+        // Otherwise, add the Bearer prefix
+        return BEARER_PREFIX + token.trim();
+    }
 
-    private static final String BASE_URL = "https://api.int.group-vehicle-file.com";
-
-    @RequestMapping(value = "/**", method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS})
+    @RequestMapping(value = "/**")
     public ResponseEntity<String> proxyRequest(
             @RequestBody(required = false) String body,
-            @RequestHeader HttpHeaders headers,
             HttpMethod method,
+            @RequestHeader HttpHeaders headers,
             HttpServletRequest request) {
         
         try {
-            String requestUri = request.getRequestURI();
-            String proxyPath = requestUri.substring(requestUri.indexOf("/api/proxy") + "/api/proxy".length());
+            // Get the path after /api/proxy
+            String path = request.getRequestURI();
+            path = path.substring(path.indexOf("/api/proxy") + "/api/proxy".length());
             
-            String targetUrl = UriComponentsBuilder
-                .fromHttpUrl(BASE_URL)
-                .path(proxyPath)
-                .query(request.getQueryString())
-                .build()
-                .toUriString();
-                
-            logger.info("Proxying request to: {}", targetUrl);
-            logger.debug("Request method: {}", method);
-            logger.debug("Request headers: {}", headers);
-            
+            // Create new headers
             HttpHeaders proxyHeaders = new HttpHeaders();
-            if (headers.getFirst("Authorization") != null) {
-                String authHeader = headers.getFirst("Authorization");
-                logger.debug("Forwarding Authorization header: {}", authHeader);
-                proxyHeaders.set("Authorization", authHeader);
+            
+            // Set Accept header to explicitly request JSON
+            List<MediaType> acceptTypes = Collections.singletonList(MediaType.APPLICATION_JSON);
+            proxyHeaders.setAccept(acceptTypes);
+            proxyHeaders.set("Accept", MediaType.APPLICATION_JSON_VALUE);
+
+            // Handle authorization from UI headers only
+            String clientAuth = headers.getFirst("Authorization");
+            if (clientAuth != null && !clientAuth.trim().isEmpty()) {
+                String effectiveAuth = formatAuthorizationHeader(clientAuth);
+                proxyHeaders.set("Authorization", effectiveAuth);
+                logger.debug("Using authorization header from UI");
+            } else {
+                logger.warn("No authorization header provided");
+                return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"error\": \"Unauthorized\", \"message\": \"No authorization header provided\"}");
             }
-            proxyHeaders.set("Accept", "application/json");
-            proxyHeaders.set("Content-Type", "application/json");
             
-            HttpEntity<String> httpEntity = new HttpEntity<>(body, proxyHeaders);
+            // Copy any other relevant headers except those that need special handling
+            headers.forEach((key, value) -> {
+                if (!key.equalsIgnoreCase("host") && 
+                    !key.equalsIgnoreCase("referer") &&
+                    !key.equalsIgnoreCase("content-length") &&
+                    !key.equalsIgnoreCase("accept") &&
+                    !key.equalsIgnoreCase("accept-encoding") &&
+                    !key.equalsIgnoreCase("origin") &&
+                    !key.equalsIgnoreCase("authorization") &&
+                    !key.equalsIgnoreCase("user-agent")) {
+                    proxyHeaders.put(key, value);
+                }
+            });
             
-            logger.info("Sending request to target system...");
+            String targetUrl = TARGET_API + path;
+            logger.info("Proxying request to: {} with method: {}", targetUrl, method);
+            logger.debug("Request headers: {}", proxyHeaders);
+
+            HttpEntity<String> requestEntity = new HttpEntity<>(body, proxyHeaders);
+            
             ResponseEntity<String> response = restTemplate.exchange(
-                targetUrl,
-                method,
-                httpEntity,
-                String.class
+                    targetUrl,
+                    method,
+                    requestEntity,
+                    String.class
             );
-            
-            logger.info("Received response with status: {}", response.getStatusCode());
-            logger.debug("Response headers: {}", response.getHeaders());
-            
+
             String responseBody = response.getBody();
-            // Validate JSON response
+            MediaType contentType = response.getHeaders().getContentType();
+            
+            logger.info("Received response with status: {} and content type: {}", 
+                       response.getStatusCode(), contentType);
+            logger.debug("Response body: {}", responseBody);
+
+            // Verify JSON response
             if (responseBody != null) {
                 try {
-                    // Try to parse the response as JSON to validate it
+                    // Try to parse as JSON to ensure it's valid
                     objectMapper.readTree(responseBody);
-                    logger.debug("Response body is valid JSON: {}", responseBody);
                 } catch (Exception e) {
-                    logger.error("Invalid JSON response received: {}", responseBody);
-                    logger.error("JSON parsing error: {}", e.getMessage());
+                    logger.error("Invalid JSON response: {}", e.getMessage());
                     return ResponseEntity
-                        .status(500)
-                        .body("{\"error\": \"Invalid JSON response from external API\", \"details\": \"" + e.getMessage() + "\"}");
+                        .status(HttpStatus.BAD_GATEWAY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\": \"Invalid JSON response from target API\", \"message\": \"" + e.getMessage() + "\"}");
                 }
-            } else {
-                logger.warn("Received null response body");
-                responseBody = "{}";  // Return empty JSON object instead of null
             }
-            
+
+            // Create response headers
             HttpHeaders responseHeaders = new HttpHeaders();
+            responseHeaders.setContentType(MediaType.APPLICATION_JSON);
+            
+            // Copy response headers except problematic ones
             response.getHeaders().forEach((key, value) -> {
-                if (!isCorsHeader(key)) {
+                if (!key.equalsIgnoreCase("transfer-encoding") &&
+                    !key.equalsIgnoreCase("content-encoding") &&
+                    !key.equalsIgnoreCase("content-length") &&
+                    !key.toLowerCase().startsWith("access-control-")) {
                     responseHeaders.put(key, value);
                 }
             });
             
             return ResponseEntity
-                .status(response.getStatusCode())
-                .headers(responseHeaders)
-                .body(responseBody);
-            
+                    .status(response.getStatusCode())
+                    .headers(responseHeaders)
+                    .body(responseBody);
+                    
         } catch (HttpStatusCodeException e) {
-            logger.error("Error from target system: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
+            logger.error("HTTP error from target API: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
+            
+            // Create error response headers
+            HttpHeaders errorHeaders = new HttpHeaders();
+            errorHeaders.setContentType(MediaType.APPLICATION_JSON);
+            
             String errorBody = e.getResponseBodyAsString();
-            
-            // Try to ensure the error response is valid JSON
             try {
-                if (errorBody != null && !errorBody.isEmpty()) {
-                    objectMapper.readTree(errorBody);
-                } else {
-                    errorBody = "{\"error\": \"Empty response from external API\"}";
-                }
+                // Verify the error response is valid JSON
+                objectMapper.readTree(errorBody);
             } catch (Exception jsonError) {
-                logger.error("Error response is not valid JSON: {}", jsonError.getMessage());
-                errorBody = "{\"error\": \"Invalid JSON in error response\", \"originalError\": \"" + 
-                           e.getStatusCode() + ": " + e.getMessage() + "\"}";
+                // If not valid JSON, create a proper JSON error response
+                errorBody = String.format(
+                    "{\"error\": \"%s\", \"message\": \"%s\", \"status\": %d}",
+                    e.getStatusCode(),
+                    e.getStatusText(),
+                    e.getRawStatusCode()
+                );
             }
-            
-            HttpHeaders responseHeaders = new HttpHeaders();
-            e.getResponseHeaders().forEach((key, value) -> {
-                if (!isCorsHeader(key)) {
-                    responseHeaders.put(key, value);
-                }
-            });
             
             return ResponseEntity
                 .status(e.getStatusCode())
-                .headers(responseHeaders)
+                .headers(errorHeaders)
                 .body(errorBody);
         } catch (Exception e) {
-            logger.error("Error proxying request: {}", e.getMessage(), e);
+            logger.error("Unexpected error: {}", e.getMessage(), e);
             return ResponseEntity
-                .status(500)
-                .body("{\"error\": \"Internal server error\", \"message\": \"" + e.getMessage() + "\"}");
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\": \"Internal Server Error\", \"message\": \"" + e.getMessage() + "\"}");
         }
-    }
-    
-    private boolean isCorsHeader(String headerName) {
-        return headerName.toLowerCase().startsWith("access-control-") ||
-               headerName.toLowerCase().equals("origin") ||
-               headerName.toLowerCase().equals("timing-allow-origin");
     }
 } 
