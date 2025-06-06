@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import ReactFlow, { Background, Controls, MiniMap, useNodesState, useEdgesState, Connection, useReactFlow, ReactFlowProvider, SelectionMode, Node, Edge, NodeDragHandler, XYPosition } from 'reactflow';
@@ -44,7 +44,8 @@ const createNode = (id: string, label: string, position: XYPosition, onLabelChan
 });
 
 const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
-    onSaveTransaction
+    onSaveTransaction,
+    onApiCall
 }) => {
     const [nodePositions, setNodePositions] = useState<NodePositions>({});
     const [edges, setEdges, onEdgesChange] = useEdgesState<TransactionEdgeData>([]);
@@ -89,32 +90,6 @@ const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
         [nodes.map(n => `${n.id}:${n.data.label}:${n.data.type}`).join(',')]
     );
 
-    const updateEdgeStatus = useCallback((edgeId: string, status: string) => {
-        setEdges(eds => eds.map(e => {
-            if (e.id === edgeId && e.data) {
-                const edgeColor = status === 'success' ? '#4caf50' : // Green for success
-                                status === 'failed' ? '#d32f2f' :    // Red for failed
-                                status === 'running' ? '#2196f3' :   // Blue for running
-                                '#757575';                          // Gray for other states
-                return {
-                    ...e,
-                    data: {
-                        ...e.data,
-                        status,
-                        transactionId: e.data.transactionId || uuidv4(),
-                        operation: e.data.operation || 'GET',
-                        path: e.data.path || ''
-                    },
-                    style: {
-                        ...e.style,
-                        stroke: edgeColor
-                    }
-                } as Edge<TransactionEdgeData>;
-            }
-            return e;
-        }));
-    }, [setEdges]);
-
     const setEdgeRunning = useCallback((edgeId: string, isRunning: boolean) => {
         setEdges(eds => eds.map(e => {
             if (e.id === edgeId) {
@@ -127,10 +102,39 @@ const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
         }));
     }, [setEdges]);
 
+    const updateEdgeStatus = useCallback((edgeId: string, status: string, runTransactionFn: (transactionId: string) => void) => {
+        setEdges(eds => eds.map(e => {
+            if (e.id === edgeId && e.data) {
+                const edgeColor = status === 'success' ? '#4caf50' : // Green for success
+                                status === 'failed' ? '#d32f2f' :    // Red for failed
+                                status === 'running' ? '#2196f3' :   // Blue for running
+                                '#757575';                          // Gray for other states
+                const transactionId = e.data.transactionId || uuidv4();
+                return {
+                    ...e,
+                    data: {
+                        ...e.data,
+                        status,
+                        transactionId,
+                        operation: e.data.operation || 'GET',
+                        path: e.data.path || '',
+                        onPlay: () => runTransactionFn(transactionId)
+                    },
+                    style: {
+                        ...e.style,
+                        stroke: edgeColor
+                    }
+                } as Edge<TransactionEdgeData>;
+            }
+            return e;
+        }));
+    }, [setEdges]);
+
     const { runTransaction, transactionDetails, stopTransaction } = useTransactionRunner({
         edges: memoizedEdges as TransactionEdge[],
-        updateEdgeStatus,
-        setEdgeRunning
+        updateEdgeStatus: (edgeId: string, status: string) => updateEdgeStatus(edgeId, status, runTransaction),
+        setEdgeRunning,
+        onApiCall
     });
 
     // Update transaction when details change
@@ -208,59 +212,17 @@ const FlowchartEditorContent: React.FC<FlowchartEditorProps> = ({
             for (const sourceEdge of sourceEdges) {
                 const pathEdges = findFullPath(sourceEdge);
                 
-                const sourceNode = nodes.find(n => n.id === pathEdges[0].source);
-                const targetNode = nodes.find(n => n.id === pathEdges[pathEdges.length - 1].target);
-
-                const pathTransaction: SavedTransaction = {
-                    id: uuidv4(),
-                    transactionId: uuidv4(),
-                    sourceNode: sourceNode?.data.label || '',
-                    targetNode: targetNode?.data.label || '',
-                    request: {
-                        method: pathEdges[0]?.data?.operation || 'GET',
-                        path: pathEdges[0]?.data?.path || '',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer sample-token'
-                        }
-                    },
-                    status: 'running',
-                    timestamp: new Date().toISOString(),
-                    nodes: nodes.map(n => ({
-                        id: n.id,
-                        label: n.data.label,
-                        type: n.type || 'system',
-                        position: n.position
-                    })),
-                    edges: pathEdges.map(e => ({
-                        id: e.id,
-                        source: e.source,
-                        target: e.target,
-                        operation: e.data?.operation || 'GET',
-                        path: e.data?.path || ''
-                    })),
-                    selectedElements: {
-                        nodeIds: selectedElements.nodes.map(n => n.id),
-                        edgeIds: pathEdges.map(e => e.id),
-                        nodes: selectedElements.nodes,
-                        edges: pathEdges
+                // Run each edge in the path sequentially
+                for (const edge of pathEdges) {
+                    if (edge.data?.transactionId) {
+                        await runTransaction(edge.data.transactionId);
                     }
-                };
-
-                console.log('Running transaction for path:', {
-                    path: pathEdges.map(e => `${e.source}->${e.target}`).join(' -> '),
-                    edgeIds: pathEdges.map(e => e.id)
-                });
-                
-                setCurrentTransaction(pathTransaction);
-                setIsTransactionDrawerOpen(true);
-                await runTransaction(pathEdges.map(e => e.id));
+                }
             }
         } catch (error) {
-            console.error('Error running transaction:', error);
-            setIsTransactionDrawerOpen(false);
+            console.error('Error running transactions:', error);
         }
-    }, [runTransaction, selectedElements, nodes, edges]);
+    }, [edges, runTransaction]);
 
     // Initialize nodes and edges
     useEffect(() => {

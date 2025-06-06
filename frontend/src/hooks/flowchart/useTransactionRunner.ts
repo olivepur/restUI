@@ -1,19 +1,24 @@
 import { useCallback, useState } from 'react';
 import axios from 'axios';
 import { TransactionEdge, TransactionDetails, EdgeStatus } from '../../components/FlowchartEditor/types';
+import { Edge } from 'reactflow';
+import { TransactionEdgeData } from '../../components/FlowchartEditor/types';
 
 interface UseTransactionRunnerProps {
-    edges: TransactionEdge[];
-    updateEdgeStatus: (edgeId: string, status: EdgeStatus) => void;
+    edges: Edge<TransactionEdgeData>[];
+    updateEdgeStatus: (edgeId: string, status: string) => void;
     setEdgeRunning: (edgeId: string, isRunning: boolean) => void;
+    onApiCall?: (method: string, url: string, request: any, response: any) => void;
 }
 
 export const useTransactionRunner = ({
     edges,
     updateEdgeStatus,
-    setEdgeRunning
+    setEdgeRunning,
+    onApiCall
 }: UseTransactionRunnerProps) => {
     const [transactionDetails, setTransactionDetails] = useState<TransactionDetails | null>(null);
+    const [runningTransactions, setRunningTransactions] = useState<Set<string>>(new Set());
 
     const convertHeaders = (headers: any): Record<string, string> => {
         const result: Record<string, string> = {};
@@ -34,130 +39,80 @@ export const useTransactionRunner = ({
         }
     };
 
-    const runTransaction = useCallback(async (edgeIds: string | string[]) => {
-        const edgeIdArray = Array.isArray(edgeIds) ? edgeIds : [edgeIds];
-        const responses: Array<{
-            path: string;
-            status: number;
-            headers: Record<string, string>;
-            body: any;
-        }> = [];
+    const stopTransaction = useCallback((transactionId: string) => {
+        setRunningTransactions(prev => {
+            const next = new Set(prev);
+            next.delete(transactionId);
+            return next;
+        });
+    }, []);
+
+    const runTransaction = useCallback(async (transactionId: string) => {
+        const edge = edges.find(e => e.data?.transactionId === transactionId);
+        if (!edge?.data) return;
+
+        setRunningTransactions(prev => new Set(prev).add(transactionId));
+        setEdgeRunning(edge.id, true);
+        updateEdgeStatus(edge.id, 'running');
 
         try {
-            // Add all edges to running set
-            edgeIdArray.forEach(id => {
-                setEdgeRunning(id, true);
-                updateEdgeStatus(id, 'running');
-            });
+            const request = {
+                method: edge.data.operation,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer sample-token'
+                },
+                body: edge.data.requestBody
+            };
 
-            for (let i = 0; i < edgeIdArray.length; i++) {
-                const id = edgeIdArray[i];
-                const edge = edges.find(e => e.id === id);
-                
-                if (!edge) {
-                    console.error(`Edge ${id} not found`);
-                    continue;
-                }
+            const response = await fetch(edge.data.path, request);
+            const responseData = await response.json();
 
-                try {
-                    const url = edge.data?.path || '';
-                    const relativeUrl = getRelativeUrl(url);
-
-                    // Make the actual API call
-                    const response = await axios({
-                        method: (edge.data?.operation || 'GET').toLowerCase(),
-                        url: `http://localhost:8080${edge.data?.path || ''}`,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(edge.data?.headers || {})
-                        },
-                        data: edge.data?.requestBody
-                    });
-
-                    // Update transaction details with successful response
-                    setTransactionDetails({
-                        id: edge.data?.transactionId || '',
-                        request: {
-                            method: edge.data?.operation || 'GET',
-                            path: edge.data?.path || '',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: edge.data?.requestBody
-                        },
-                        response: {
-                            status: response.status,
-                            headers: convertHeaders(response.headers),
-                            body: response.data
-                        },
-                        loading: false
-                    });
-
-                    // Update edge status based on response
-                    updateEdgeStatus(id, 'success');
-
-                } catch (err) {
-                    const error = err as Error;
-                    const status = axios.isAxiosError(err) ? err.response?.status || 500 : 500;
-                    
-                    // Update edge status based on error type
-                    if (status === 403) {
-                        updateEdgeStatus(id, 'failed');
-                    } else {
-                        updateEdgeStatus(id, 'error');
+            // Log the API call
+            if (onApiCall) {
+                onApiCall(
+                    edge.data.operation,
+                    edge.data.path,
+                    request,
+                    {
+                        status: response.status,
+                        headers: Object.fromEntries(response.headers.entries()),
+                        body: responseData
                     }
-
-                    // Create error response details
-                    const errorResponse = {
-                        status: status,
-                        headers: axios.isAxiosError(err) ? convertHeaders(err.response?.headers || {}) : {},
-                        body: {
-                            error: error.message,
-                            details: axios.isAxiosError(err) ? err.response?.data : 'An unexpected error occurred',
-                            path: edge.data?.path || ''
-                        }
-                    };
-
-                    // Update transaction details with error response
-                    setTransactionDetails({
-                        id: edge.data?.transactionId || '',
-                        request: {
-                            method: edge.data?.operation || 'GET',
-                            path: edge.data?.path || '',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: edge.data?.requestBody
-                        },
-                        response: errorResponse,
-                        loading: false
-                    });
-                }
-
-                setEdgeRunning(id, false);
-
-                if (i < edgeIdArray.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
+                );
             }
+
+            const details: TransactionDetails = {
+                id: transactionId,
+                request: {
+                    method: edge.data.operation,
+                    path: edge.data.path,
+                    headers: request.headers,
+                    body: request.body
+                },
+                response: {
+                    status: response.status,
+                    headers: Object.fromEntries(response.headers.entries()),
+                    body: responseData
+                },
+                loading: false
+            };
+
+            setTransactionDetails(details);
+            updateEdgeStatus(edge.id, response.ok ? 'success' : 'failed');
         } catch (error) {
-            console.error('Error running transactions:', error);
-            edgeIdArray.forEach(id => {
-                updateEdgeStatus(id, 'error');
-                setEdgeRunning(id, false);
-            });
+            console.error('Transaction failed:', error);
+            updateEdgeStatus(edge.id, 'failed');
+        } finally {
+            setEdgeRunning(edge.id, false);
+            stopTransaction(transactionId);
         }
-
-        return responses;
-    }, [edges, setEdgeRunning, updateEdgeStatus]);
-
-    const stopTransaction = useCallback(() => {
-        setTransactionDetails(null);
-    }, []);
+    }, [edges, updateEdgeStatus, setEdgeRunning, stopTransaction, onApiCall]);
 
     return {
         runTransaction,
         stopTransaction,
-        transactionDetails
+        transactionDetails,
+        runningTransactions
     };
 }; 

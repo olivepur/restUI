@@ -4,8 +4,19 @@ import { FlowchartEditor } from './components/FlowchartEditor';
 import { TransactionsHistoryPage } from './pages/TransactionsHistoryPage';
 import { ScenarioDesignerPage } from './pages/ScenarioDesignerPage';
 import { NavigationBar } from './components/common/NavigationBar';
+import { ApiDrawer } from './components/common/ApiDrawer';
 import type { SavedTransaction } from './components/FlowchartEditor/types';
-import { Snackbar, Alert, Box } from '@mui/material';
+import { Snackbar, Alert, Box, IconButton } from '@mui/material';
+import ListIcon from '@mui/icons-material/List';
+
+interface ApiLog {
+    timestamp: string;
+    method: string;
+    url: string;
+    request: any;
+    response: any;
+    test: any;
+}
 
 const App: React.FC = () => {
     const [snackbar, setSnackbar] = useState({
@@ -13,6 +24,8 @@ const App: React.FC = () => {
         message: '',
         severity: 'success' as 'success' | 'error' | 'info' | 'warning'
     });
+    const [apiDrawerOpen, setApiDrawerOpen] = useState(false);
+    const [apiLogs, setApiLogs] = useState<ApiLog[]>([]);
 
     const handleCloseSnackbar = () => {
         setSnackbar(prev => ({ ...prev, open: false }));
@@ -24,6 +37,20 @@ const App: React.FC = () => {
             message,
             severity
         });
+    };
+
+    const logApiCall = (method: string, url: string, request: any, response: any) => {
+        const newLog: ApiLog = {
+            timestamp: new Date().toISOString(),
+            method,
+            url,
+            request,
+            response,
+            test: response.test
+        };
+        setApiLogs(prev => [newLog, ...prev]);
+        // Automatically show the drawer when a new API call is logged
+        setApiDrawerOpen(true);
     };
 
     const handleSaveTransaction = async (transaction: SavedTransaction) => {
@@ -48,28 +75,44 @@ const App: React.FC = () => {
     return (
         <Router>
             <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-                <NavigationBar />
-                <Box sx={{ flexGrow: 1 }}>
-                    <Routes>
-                        <Route 
-                            path="/" 
-                            element={
-                                <FlowchartEditor 
-                                    transactions={[]}
-                                    onRunTransaction={() => {}}
-                                    onSaveTransaction={handleSaveTransaction}
-                                />
-                            } 
-                        />
-                        <Route 
-                            path="/transactions-history" 
-                            element={<TransactionsHistoryPage />} 
-                        />
-                        <Route 
-                            path="/scenario-designer" 
-                            element={<ScenarioDesignerPage />} 
-                        />
-                    </Routes>
+                <NavigationBar>
+                    <IconButton
+                        color="inherit"
+                        onClick={() => setApiDrawerOpen(!apiDrawerOpen)}
+                        sx={{ ml: 2 }}
+                    >
+                        <ListIcon />
+                    </IconButton>
+                </NavigationBar>
+                <Box sx={{ flexGrow: 1, display: 'flex' }}>
+                    <Box sx={{ flexGrow: 1 }}>
+                        <Routes>
+                            <Route 
+                                path="/" 
+                                element={
+                                    <FlowchartEditor 
+                                        transactions={[]}
+                                        onRunTransaction={() => {}}
+                                        onSaveTransaction={handleSaveTransaction}
+                                        onApiCall={logApiCall}
+                                    />
+                                } 
+                            />
+                            <Route 
+                                path="/transactions-history" 
+                                element={<TransactionsHistoryPage />} 
+                            />
+                            <Route 
+                                path="/scenario-designer" 
+                                element={<ScenarioDesignerPage onApiCall={logApiCall} />} 
+                            />
+                        </Routes>
+                    </Box>
+                    <ApiDrawer
+                        open={apiDrawerOpen}
+                        onClose={() => setApiDrawerOpen(false)}
+                        apiLogs={apiLogs}
+                    />
                 </Box>
                 <Snackbar
                     open={snackbar.open}

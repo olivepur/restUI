@@ -242,26 +242,6 @@ export const TransactionResultDrawer: React.FC<TransactionResultDrawerProps> = (
                         })}
                     </>
                 )}
-
-                {memoizedTransaction.test && (
-                    <>
-                        <Typography variant="h6" sx={{ mb: 1 }}>Test</Typography>
-                        <Paper sx={{ p: 2 }}>
-                            <Typography variant="subtitle2">Script:</Typography>
-                            <pre style={{ margin: '8px 0', overflow: 'auto', background: '#f5f5f5', padding: '8px', borderRadius: '4px' }}>
-                                {memoizedTransaction.test.script}
-                            </pre>
-                            {memoizedTransaction.test.result && (
-                                <>
-                                    <Typography variant="subtitle2">Result:</Typography>
-                                    <pre style={{ margin: '8px 0', overflow: 'auto', background: '#f5f5f5', padding: '8px', borderRadius: '4px' }}>
-                                        {memoizedTransaction.test.result}
-                                    </pre>
-                                </>
-                            )}
-                        </Paper>
-                    </>
-                )}
             </Box>
         </Drawer>
     );

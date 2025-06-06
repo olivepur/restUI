@@ -1,45 +1,19 @@
 import React from 'react';
-import { AppBar, Toolbar, Button, Box } from '@mui/material';
-import { useNavigate, useLocation } from 'react-router-dom';
-import ApiIcon from '@mui/icons-material/Api';
-import HistoryIcon from '@mui/icons-material/History';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import { AppBar, Toolbar, Typography } from '@mui/material';
+import { Link } from 'react-router-dom';
 
-export const NavigationBar: React.FC = () => {
-    const navigate = useNavigate();
-    const location = useLocation();
+interface NavigationBarProps {
+    children?: React.ReactNode;
+}
 
-    const isActive = (path: string) => location.pathname === path;
-
+export const NavigationBar: React.FC<NavigationBarProps> = ({ children }) => {
     return (
-        <AppBar position="static" color="default" elevation={1}>
+        <AppBar position="static">
             <Toolbar>
-                <Box sx={{ flexGrow: 1, display: 'flex', gap: 2 }}>
-                    <Button
-                        color={isActive('/') ? 'primary' : 'inherit'}
-                        startIcon={<AccountTreeIcon />}
-                        onClick={() => navigate('/')}
-                        variant={isActive('/') ? 'contained' : 'text'}
-                    >
-                        Flowchart
-                    </Button>
-                    <Button
-                        color={isActive('/scenario-designer') ? 'primary' : 'inherit'}
-                        startIcon={<ApiIcon />}
-                        onClick={() => navigate('/scenario-designer')}
-                        variant={isActive('/scenario-designer') ? 'contained' : 'text'}
-                    >
-                        Scenario Designer
-                    </Button>
-                    <Button
-                        color={isActive('/transactions-history') ? 'primary' : 'inherit'}
-                        startIcon={<HistoryIcon />}
-                        onClick={() => navigate('/transactions-history')}
-                        variant={isActive('/transactions-history') ? 'contained' : 'text'}
-                    >
-                        History
-                    </Button>
-                </Box>
+                <Typography variant="h6" component={Link} to="/" sx={{ color: 'white', textDecoration: 'none', flexGrow: 1 }}>
+                    RestUI
+                </Typography>
+                {children}
             </Toolbar>
         </AppBar>
     );

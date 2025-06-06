@@ -125,6 +125,7 @@ export interface FlowchartEditorProps {
     transactions: SavedTransaction[];
     onRunTransaction: (transactionId: string) => void;
     onSaveTransaction?: (transaction: SavedTransaction) => void;
+    onApiCall?: (method: string, url: string, request: any, response: any) => void;
 }
 
 export interface TransactionResponse {
