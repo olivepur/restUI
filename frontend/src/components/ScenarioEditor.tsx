@@ -394,6 +394,7 @@ export const ScenarioEditor: React.FC<ScenarioEditorProps> = ({
             .join('\n');
         
         onSave({
+            id: `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             title: title.trim(),
             content
         });

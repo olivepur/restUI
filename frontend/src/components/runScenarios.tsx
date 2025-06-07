@@ -18,6 +18,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import DeleteIcon from '@mui/icons-material/Delete';
+import ClearAllIcon from '@mui/icons-material/ClearAll';
 import { GeneratedScenario } from './scenarioGenerator';
 import { testRunner } from './testRunner';
 
@@ -29,41 +31,44 @@ interface RunScenariosProps {
 
 interface StepResult {
     step: string;
-    status: 'pending' | 'running' | 'passed' | 'failed';
-    error?: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
     results: Array<{
-        name: string;
-        passed: boolean;
+        suggestion?: string;
+        expected?: any;
+        actual?: any;
         error?: string;
-        displayText?: string;
         details?: {
+            suggestion?: string;
             expected?: any;
             actual?: any;
-            suggestion?: string;
         };
     }>;
 }
 
+interface TestRun {
+    id: string;           // scenarioRunId
+    scenarioId: string;   // References the GeneratedScenario.id
+    title: string;
+    status: 'running' | 'completed' | 'failed';
+    steps: StepResult[];
+    startTime: string;
+    endTime?: string;
+}
+
 interface RunScenariosState {
     isRunning: boolean;
-    currentStep: string;
-    stepResults: StepResult[];
+    testRuns: TestRun[];
     error?: string;
     isExpanded: boolean;
-    scenarioStatus: 'pending' | 'running' | 'passed' | 'failed';
 }
 
 export class RunScenarios extends React.Component<RunScenariosProps, RunScenariosState> {
-    constructor(props: RunScenariosProps) {
-        super(props);
-        this.state = {
-            isRunning: false,
-            currentStep: '',
-            stepResults: [],
-            isExpanded: false,
-            scenarioStatus: 'pending'
-        };
-    }
+    state: RunScenariosState = {
+        isRunning: false,
+        testRuns: [],
+        error: undefined,
+        isExpanded: false
+    };
 
     parseSteps(content: string): string[] {
         return content.split('\n')
@@ -74,216 +79,215 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
     handleRun = async () => {
         const { scenario } = this.props;
         const steps = this.parseSteps(scenario.content);
-        const context = {
-            endpoint: ''
-        };
+        const runId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-        this.setState({
-            isRunning: true,
-            stepResults: steps.map(step => ({
+        // Create a new test run
+        const newRun: TestRun = {
+            id: runId,
+            scenarioId: scenario.id,
+            title: scenario.title,
+            status: 'running',
+            steps: steps.map(step => ({
                 step,
                 status: 'pending',
                 results: []
             })),
+            startTime: new Date().toISOString()
+        };
+
+        // Add the new run to the list
+        this.setState(prev => ({
+            isRunning: true,
+            testRuns: [newRun, ...prev.testRuns],
             error: undefined,
-            scenarioStatus: 'running'
-        });
+            isExpanded: true
+        }));
 
         try {
-            for (let i = 0; i < steps.length; i++) {
-                const step = steps[i];
-                
-                this.setState(prev => ({
-                    stepResults: prev.stepResults.map((result, index) => 
-                        index === i ? { ...result, status: 'running' } : result
-                    )
-                }));
-
-                const stepResults = await testRunner.runStep(step, context);
-                const stepPassed = stepResults.every(result => result.passed);
-                
-                this.setState(prev => ({
-                    stepResults: prev.stepResults.map((result, index) => 
-                        index === i ? {
-                            ...result,
-                            status: stepPassed ? 'passed' : 'failed',
-                            results: stepResults,
-                            error: stepResults.find(r => !r.passed)?.error
-                        } : result
-                    )
-                }));
-            }
-
-            // Update final scenario status
+            await this.props.onRun(scenario);
+            
+            // Update the run status
             this.setState(prev => ({
-                scenarioStatus: prev.stepResults.some(step => step.status === 'failed') ? 'failed' : 'passed'
+                isRunning: false,
+                testRuns: prev.testRuns.map(run => 
+                    run.id === runId ? {
+                        ...run,
+                        status: 'completed',
+                        steps: run.steps.map(step => ({
+                            ...step,
+                            status: 'completed'
+                        })),
+                        endTime: new Date().toISOString()
+                    } : run
+                )
             }));
-
         } catch (error) {
-            this.setState({
-                error: error instanceof Error ? error.message : 'An error occurred while running the scenario',
-                scenarioStatus: 'failed'
-            });
-        } finally {
-            this.setState({ isRunning: false });
+            console.error('Error running scenario:', error);
+            
+            // Update the run status
+            this.setState(prev => ({
+                isRunning: false,
+                testRuns: prev.testRuns.map(run => 
+                    run.id === runId ? {
+                        ...run,
+                        status: 'failed',
+                        steps: run.steps.map(step => ({
+                            ...step,
+                            status: 'failed'
+                        })),
+                        endTime: new Date().toISOString()
+                    } : run
+                ),
+                error: error instanceof Error ? error.message : 'Failed to run scenario'
+            }));
         }
     };
 
-    renderScenarioStatus() {
-        const { scenarioStatus } = this.state;
-        
-        switch (scenarioStatus) {
-            case 'pending':
-                return <Chip label="Not Run" variant="outlined" size="small" />;
-            case 'running':
-                return <Chip 
-                    label="Running" 
-                    color="primary" 
-                    icon={<CircularProgress size={16} />} 
-                    size="small" 
-                />;
-            case 'passed':
-                return <Chip 
-                    label="Passed" 
-                    color="success" 
-                    icon={<CheckCircleIcon />} 
-                    size="small" 
-                />;
-            case 'failed':
-                return <Chip 
-                    label="Failed" 
-                    color="error" 
-                    icon={<ErrorIcon />} 
-                    size="small" 
-                />;
-        }
-    }
+    handleRemoveRun = (runId: string) => {
+        this.setState(prev => ({
+            testRuns: prev.testRuns.filter(run => run.id !== runId)
+        }));
+    };
+
+    handleClearAllRuns = () => {
+        this.setState({
+            testRuns: [],
+            error: undefined
+        });
+    };
 
     render() {
-        const { disabled, scenario } = this.props;
-        const { isRunning, stepResults, error, isExpanded, scenarioStatus } = this.state;
+        const { disabled } = this.props;
+        const { isRunning, testRuns, error, isExpanded } = this.state;
 
         return (
-            <Stack spacing={2}>
-                <Paper 
-                    sx={{ 
-                        p: 2,
-                        cursor: stepResults.length > 0 ? 'pointer' : 'default',
-                        '&:hover': stepResults.length > 0 ? {
-                            bgcolor: 'action.hover'
-                        } : {}
-                    }}
-                    onClick={() => stepResults.length > 0 && this.setState(prev => ({ isExpanded: !prev.isExpanded }))}
-                >
-                    <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
-                        <Stack direction="row" spacing={2} alignItems="center">
-                            {this.renderScenarioStatus()}
-                            <Typography>
-                                {scenario.title}
-                            </Typography>
-                        </Stack>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                            <Button
-                                variant="contained"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    this.handleRun();
-                                }}
-                                startIcon={isRunning ? <CircularProgress size={20} /> : <PlayArrowIcon />}
-                                disabled={disabled || isRunning}
-                                color="primary"
-                                size="small"
-                            >
-                                {isRunning ? 'Running' : 'Run'}
-                            </Button>
-                            {stepResults.length > 0 && (
-                                <IconButton 
-                                    size="small"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        this.setState(prev => ({ isExpanded: !prev.isExpanded }));
-                                    }}
-                                >
-                                    {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
-                                </IconButton>
-                            )}
-                        </Stack>
+            <Box>
+                <Stack direction="row" spacing={2} alignItems="center">
+                    <Button
+                        variant="contained"
+                        onClick={this.handleRun}
+                        disabled={disabled || isRunning}
+                        startIcon={isRunning ? <CircularProgress size={20} /> : <PlayArrowIcon />}
+                    >
+                        {isRunning ? 'Running...' : 'Run Scenario'}
+                    </Button>
+                    {testRuns.length > 0 && (
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={this.handleClearAllRuns}
+                            startIcon={<ClearAllIcon />}
+                            size="medium"
+                        >
+                            Clear All Runs
+                        </Button>
+                    )}
+                </Stack>
+
+                {testRuns.length > 0 && (
+                    <Stack spacing={2} sx={{ mt: 2 }}>
+                        {testRuns.map((run) => (
+                            <Paper key={run.id} sx={{ p: 2 }}>
+                                <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                                    <Chip
+                                        label={run.status === 'completed' ? 'Passed' : 'Failed'}
+                                        color={run.status === 'completed' ? 'success' : 'error'}
+                                        size="small"
+                                    />
+                                    <Typography variant="caption" color="text.secondary">
+                                        Run ID: {run.id}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {new Date(run.startTime).toLocaleString()}
+                                    </Typography>
+                                    <Box sx={{ flexGrow: 1 }} />
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => this.handleRemoveRun(run.id)}
+                                        color="error"
+                                        title="Remove this run"
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </Stack>
+
+                                <List>
+                                    {run.steps.map((step, index) => (
+                                        <ListItem
+                                            key={`${index}-${step.step}`}
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                py: 1,
+                                                borderBottom: (theme) =>
+                                                    index < run.steps.length - 1 ?
+                                                    `1px solid ${theme.palette.divider}` : 'none'
+                                            }}
+                                        >
+                                            {step.status === 'running' ? (
+                                                <CircularProgress size={20} sx={{ mr: 1, mt: 0.5 }} />
+                                            ) : step.status === 'failed' ? (
+                                                <ErrorIcon color="error" sx={{ mr: 1, mt: 0.5 }} />
+                                            ) : step.status === 'completed' ? (
+                                                <CheckCircleIcon color="success" sx={{ mr: 1, mt: 0.5 }} />
+                                            ) : (
+                                                <Box sx={{ width: 20, height: 20, mr: 1 }} />
+                                            )}
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography
+                                                    sx={{
+                                                        color: step.status === 'failed' ? 'error.main' :
+                                                               step.status === 'completed' ? 'success.main' :
+                                                               'text.primary',
+                                                        fontWeight: 500,
+                                                        mb: step.results.length > 0 ? 1 : 0
+                                                    }}
+                                                >
+                                                    {step.step}
+                                                </Typography>
+                                                {step.results.length > 0 && (
+                                                    <Box sx={{ pl: 2, color: 'text.secondary' }}>
+                                                        {step.results.map((result, idx) => (
+                                                            <Box key={idx}>
+                                                                {result.suggestion && (
+                                                                    <Typography variant="body2" sx={{ fontStyle: 'italic', mb: 1 }}>
+                                                                        {result.suggestion}
+                                                                    </Typography>
+                                                                )}
+                                                                {result.expected !== undefined && (
+                                                                    <Typography variant="body2">
+                                                                        Expected: {JSON.stringify(result.expected)}
+                                                                    </Typography>
+                                                                )}
+                                                                {result.actual !== undefined && (
+                                                                    <Typography variant="body2">
+                                                                        Actual: {JSON.stringify(result.actual)}
+                                                                    </Typography>
+                                                                )}
+                                                                {result.error && (
+                                                                    <Typography variant="body2" color="error">
+                                                                        Error: {result.error}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                        ))}
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        </ListItem>
+                                    ))}
+                                </List>
+                            </Paper>
+                        ))}
                     </Stack>
-                </Paper>
-                
-                <Collapse in={isExpanded}>
-                    <Paper sx={{ p: 2 }}>
-                        <List>
-                            {stepResults.map((stepResult, index) => (
-                                <ListItem 
-                                    key={index}
-                                    sx={{
-                                        display: 'flex',
-                                        alignItems: 'flex-start',
-                                        flexDirection: 'column',
-                                        gap: 1,
-                                        borderBottom: (theme) => 
-                                            index < stepResults.length - 1 ? 
-                                            `1px solid ${theme.palette.divider}` : 'none',
-                                        py: 2
-                                    }}
-                                >
-                                    <Stack direction="row" spacing={2} alignItems="center" width="100%">
-                                        {stepResult.status === 'failed' ? 
-                                            <ErrorIcon fontSize="small" color="error" /> : 
-                                            <CheckCircleIcon fontSize="small" color="success" />
-                                        }
-                                        <Typography 
-                                            sx={{ 
-                                                color: stepResult.status === 'failed' ? 'error.main' : 'success.main',
-                                                flex: 1
-                                            }}
-                                        >
-                                            {stepResult.step}
-                                        </Typography>
-                                        <Chip 
-                                            label={stepResult.status} 
-                                            size="small"
-                                            color={stepResult.status === 'failed' ? 'error' : 'success'}
-                                        />
-                                    </Stack>
-                                    {stepResult.status === 'failed' && stepResult.results[0]?.details && (
-                                        <Box 
-                                            sx={{ 
-                                                pl: 6,
-                                                width: '100%',
-                                                color: 'text.secondary'
-                                            }}
-                                        >
-                                            {stepResult.results[0].details.suggestion && (
-                                                <Typography variant="body2" sx={{ mb: 1, fontStyle: 'italic' }}>
-                                                    {stepResult.results[0].details.suggestion}
-                                                </Typography>
-                                            )}
-                                            {stepResult.results[0].details.expected !== undefined && (
-                                                <Typography variant="body2">
-                                                    Expected: {JSON.stringify(stepResult.results[0].details.expected)}
-                                                </Typography>
-                                            )}
-                                            {stepResult.results[0].details.actual !== undefined && (
-                                                <Typography variant="body2">
-                                                    Actual: {JSON.stringify(stepResult.results[0].details.actual)}
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    )}
-                                </ListItem>
-                            ))}
-                        </List>
-                    </Paper>
-                </Collapse>
+                )}
 
                 {error && (
-                    <Typography color="error" variant="body2">
+                    <Typography color="error" sx={{ mt: 2 }}>
                         {error}
                     </Typography>
                 )}
-            </Stack>
+            </Box>
         );
     }
 } 

@@ -14,6 +14,7 @@ interface TestContext {
     endpoint: string;
     headers: Record<string, string>;
     authHeader?: string;
+    useProxy: boolean;
 }
 
 interface TestResult {
@@ -22,6 +23,8 @@ interface TestResult {
     error?: string;
     details?: any;
     displayText?: string;
+    scenarioId?: string;      // References the GeneratedScenario.id
+    scenarioRunId?: string;   // References the specific test run
 }
 
 interface ScenarioStep {
@@ -33,7 +36,8 @@ interface ScenarioStep {
 }
 
 interface ScenarioExecution {
-    id: string;
+    scenarioId: string;      // References the GeneratedScenario.id
+    scenarioRunId: string;   // Unique ID for this test run
     title: string;
     steps: ScenarioStep[];
     startTime: string;
@@ -54,16 +58,23 @@ class TestRunner {
         },
         variables: this.variables,
         endpoint: '',
-        headers: {}
+        headers: {},
+        useProxy: false
     };
 
     public getResponse() {
         return this.response;
     }
 
-    startScenario(title: string, authHeader?: string, scenarioId?: string) {
+    startScenario(
+        title: string, 
+        authHeader?: string, 
+        ids?: { scenarioId: string; scenarioRunId: string }, 
+        useProxy: boolean = true
+    ) {
         this.currentScenario = {
-            id: scenarioId || `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            scenarioId: ids?.scenarioId || `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            scenarioRunId: ids?.scenarioRunId || `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             title,
             steps: [],
             startTime: new Date().toISOString(),
@@ -73,6 +84,7 @@ class TestRunner {
         this.variables.clear();
         this.response = null;
         this.context.headers = {};
+        this.context.useProxy = useProxy;
         if (authHeader) {
             this.context.authHeader = authHeader;
             this.context.headers['Authorization'] = authHeader;
@@ -142,7 +154,8 @@ class TestRunner {
 
                 this.response = await sendRequest(this.context.endpoint, {
                     method: 'GET',
-                    headers: this.context.headers
+                    headers: this.context.headers,
+                    useProxy: this.context.useProxy
                 });
                 
                 results.push({
@@ -409,22 +422,26 @@ class TestRunner {
 
                 // Format step result for API drawer
                 if (context.onApiCall) {
-                    const stepDisplay = `${stepResult.status === 'passed' ? '✓' : '✗'} ${step}${
-                        stepResult.status === 'failed' && results[0]?.details?.suggestion 
-                            ? ` → ${results[0].details.suggestion}`
-                            : ''
-                    }`;
+                    const stepDisplay = `${stepResult.status === 'passed' ? '✓' : '✗'} ${step}`;
+                    const details = results[0]?.details || {};
+                    
+                    if (stepResult.status === 'failed' && results[0]?.details?.suggestion) {
+                        details.suggestion = results[0].details.suggestion;
+                    }
 
+                    // Send step result
                     context.onApiCall(
                         'TEST_LOG',
                         'test-result',
                         {
                             type: 'test-log',
-                            scenarioId: this.currentScenario.id,
+                            scenarioId: this.currentScenario.scenarioId,
+                            scenarioRunId: this.currentScenario.scenarioRunId,
                             content: stepDisplay,
                             status: stepResult.status,
                             color: results[0]?.details?.isUnimplemented ? '#ff9800' : (stepResult.status === 'passed' ? '#4caf50' : '#f44336'),
-                            timestamp: new Date().toISOString()
+                            timestamp: new Date().toISOString(),
+                            details
                         },
                         null
                     );
@@ -440,18 +457,22 @@ class TestRunner {
 
             // Send error status
             if (context.onApiCall && this.currentScenario) {
-                const errorDisplay = `✗ ${step} → ${error instanceof Error ? error.message : 'Step execution failed'}`;
+                const errorDisplay = `✗ ${step}`;
                 
                 context.onApiCall(
                     'TEST_LOG',
                     'test-result',
                     {
                         type: 'test-log',
-                        scenarioId: this.currentScenario.id,
+                        scenarioId: this.currentScenario.scenarioId,
+                        scenarioRunId: this.currentScenario.scenarioRunId,
                         content: errorDisplay,
                         status: 'failed',
                         color: '#f44336',
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        details: {
+                            error: error instanceof Error ? error.message : 'Step execution failed'
+                        }
                     },
                     null
                 );
@@ -494,7 +515,8 @@ class TestRunner {
                     'test-result',
                     {
                         type: 'test-log',
-                        scenarioId: this.currentScenario.id,
+                        scenarioId: this.currentScenario.scenarioId,
+                        scenarioRunId: this.currentScenario.scenarioRunId,
                         content: `Scenario: ${this.currentScenario.title} (${status})`,
                         status: status,
                         color: status === 'passed' ? '#4caf50' : '#f44336',

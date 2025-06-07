@@ -22,7 +22,8 @@ import {
     ListItem,
     ListItemText,
     FormControlLabel,
-    Switch
+    Switch,
+    CircularProgress
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AddIcon from '@mui/icons-material/Add';
@@ -46,6 +47,34 @@ import { sendRequest } from '../utils/api';
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const STORAGE_KEY = 'scenarioDesigner';
 
+interface TestResult {
+    type: 'test-log';
+    scenarioId: string;      // References the GeneratedScenario.id
+    scenarioRunId: string;   // Unique ID for this specific test run
+    content: string;
+    status: 'passed' | 'failed';
+    color: string;
+    timestamp: string;
+    details?: {
+        suggestion?: string;
+        expected?: any;
+        actual?: any;
+        error?: string;
+    };
+}
+
+interface TestResults {
+    [scenarioRunId: string]: {
+        id: string;           // scenarioRunId
+        scenarioId: string;   // References the GeneratedScenario.id
+        title: string;
+        status: 'running' | 'completed' | 'failed';
+        steps: TestResult[];
+        startTime: string;
+        endTime?: string;
+    };
+}
+
 interface ScenarioDesignerPageProps {
     onApiCall?: (method: string, url: string, request: any, response: any) => void;
 }
@@ -60,23 +89,29 @@ interface Interaction {
     useProxy: boolean;
 }
 
-interface TestResult {
-    type: 'test-log';
-    scenarioId: string;
-    content: string;
-    status: 'passed' | 'failed';
-    color: string;
-    timestamp: string;
-}
-
-interface TestResults {
-    [scenarioId: string]: {
-        id: string;
-        title: string;
-        status: 'running' | 'completed' | 'failed';
-        steps: TestResult[];
-    };
-}
+const getScenarioStatus = (scenarioId: string, testResults: TestResults) => {
+    // Get all runs for this scenario
+    const scenarioRuns = Object.values(testResults).filter(run => run.scenarioId === scenarioId);
+    
+    if (scenarioRuns.length === 0) {
+        return 'none';  // No runs yet
+    }
+    
+    // Check if any run is currently running
+    const hasRunning = scenarioRuns.some(run => run.status === 'running');
+    if (hasRunning) {
+        return 'running';
+    }
+    
+    // Check if any run has failed
+    const hasFailed = scenarioRuns.some(run => run.status === 'failed');
+    if (hasFailed) {
+        return 'failed';
+    }
+    
+    // If we get here, all runs must be completed successfully
+    return 'success';
+};
 
 export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onApiCall }) => {
     // Load saved state from localStorage
@@ -214,17 +249,34 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
 
     const handlePlayClick = async (scenario: GeneratedScenario) => {
         try {
-            // Generate a unique scenario ID
-            const scenarioId = `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            // Generate a unique run ID for this test execution
+            const scenarioRunId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             
             // Get the current authorization header
             const authHeader = interaction.headers['Authorization'];
             
-            testRunner.startScenario(scenario.title, authHeader, scenarioId);
+            // Start scenario with current proxy setting
+            testRunner.startScenario(scenario.title, authHeader, {
+                scenarioId: scenario.id,
+                scenarioRunId: scenarioRunId
+            }, interaction.useProxy);
             
             const steps = scenario.content.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.startsWith('Given') || line.startsWith('When') || line.startsWith('Then'));
+
+            // Initialize the test result structure
+            setTestResults(prev => ({
+                ...prev,
+                [scenarioRunId]: {
+                    id: scenarioRunId,
+                    scenarioId: scenario.id,
+                    title: scenario.title,
+                    status: 'running',
+                    steps: [],
+                    startTime: new Date().toISOString()
+                }
+            }));
 
             for (const step of steps) {
                 await testRunner.runStep(step, { onApiCall: handleApiCall });
@@ -262,10 +314,15 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                 useProxy: interaction.useProxy
             });
 
-            // Store the response data for scenario generation
+            // Store the complete response data for scenario generation
             setInteraction(prev => ({
                 ...prev,
-                lastResponse: response.body
+                lastResponse: {
+                    status: response.status,
+                    headers: response.headers,
+                    body: response.body,
+                    requestUrl: originalUrl
+                }
             }));
             setHasTestedRequest(true);
 
@@ -318,35 +375,46 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                 return;
             }
 
-            if (result.content.startsWith('Scenario:')) {
-                // This is a scenario summary
-                const scenarioTitle = result.content.split('(')[0].replace('Scenario:', '').trim();
-                setTestResults(prev => ({
-                    ...prev,
-                    [result.scenarioId]: {
-                        id: result.scenarioId,
-                        title: scenarioTitle,
-                        status: result.status === 'passed' ? 'completed' : 'failed',
-                        steps: []
-                    }
-                }));
-            } else {
-                // This is a step result
-                setTestResults(prev => {
-                    if (!result.scenarioId || !prev[result.scenarioId]) {
-                        console.warn('Received step result for unknown scenario:', result);
-                        return prev;
-                    }
-                    
+            setTestResults(prev => {
+                const currentScenario = prev[result.scenarioRunId] || {
+                    id: result.scenarioRunId,
+                    title: '',
+                    status: 'running',
+                    steps: []
+                };
+
+                if (result.content.startsWith('Scenario:')) {
+                    // This is a scenario summary
+                    const scenarioTitle = result.content.split('(')[0].replace('Scenario:', '').trim();
                     return {
                         ...prev,
-                        [result.scenarioId]: {
-                            ...prev[result.scenarioId],
-                            steps: [...prev[result.scenarioId].steps, result]
+                        [result.scenarioRunId]: {
+                            ...currentScenario,
+                            title: scenarioTitle,
+                            status: result.status === 'passed' ? 'completed' : 'failed'
                         }
                     };
-                });
-            }
+                } else {
+                    // This is a step result
+                    const existingStepIndex = currentScenario.steps.findIndex(
+                        step => step.content === result.content
+                    );
+
+                    const updatedSteps = existingStepIndex >= 0
+                        ? currentScenario.steps.map((step, index) =>
+                            index === existingStepIndex ? result : step
+                          )
+                        : [...currentScenario.steps, result];
+
+                    return {
+                        ...prev,
+                        [result.scenarioRunId]: {
+                            ...currentScenario,
+                            steps: updatedSteps
+                        }
+                    };
+                }
+            });
         }
         
         // Forward the call to the original onApiCall if provided
@@ -495,25 +563,32 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                             }
                                         }}
                                     >
-                                        <Typography>{scenario.title}</Typography>
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                            {/* Render status icon */}
+                                            {getScenarioStatus(scenario.id, testResults) === 'success' && (
+                                                <CheckCircleIcon color="success" />
+                                            )}
+                                            {getScenarioStatus(scenario.id, testResults) === 'failed' && (
+                                                <ErrorIcon color="error" />
+                                            )}
+                                            {getScenarioStatus(scenario.id, testResults) === 'running' && (
+                                                <CircularProgress size={20} />
+                                            )}
+                                            <Stack direction="column" spacing={0.5}>
+                                                <Typography>{scenario.title}</Typography>
+                                                <Typography 
+                                                    variant="caption" 
+                                                    sx={{ color: 'text.secondary' }}
+                                                >
+                                                    ID: {scenario.id}
+                                                </Typography>
+                                            </Stack>
+                                        </Stack>
                                         <Stack 
                                             direction="row" 
                                             spacing={1}
                                             onClick={(e) => e.stopPropagation()}
                                         >
-                                            <Tooltip title="Run scenario">
-                                                <span>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={async (e) => {
-                                                            e.stopPropagation();
-                                                            await handlePlayClick(scenario);
-                                                        }}
-                                                    >
-                                                        <PlayArrowIcon />
-                                                    </IconButton>
-                                                </span>
-                                            </Tooltip>
                                             <Tooltip title="Edit scenario">
                                                 <span>
                                                     <IconButton
@@ -565,76 +640,6 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                 </Accordion>
                             ))}
                         </Box>
-                    </Paper>
-                )}
-
-                {Object.entries(testResults).length > 0 && (
-                    <Paper sx={{ p: 3, mt: 3 }}>
-                        <Typography variant="h6" gutterBottom>
-                            Test Results
-                        </Typography>
-                        <Stack spacing={2}>
-                            {Object.entries(testResults).map(([scenarioId, scenario]) => (
-                                <Paper
-                                    key={scenarioId}
-                                    sx={{
-                                        p: 2,
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            bgcolor: 'action.hover'
-                                        }
-                                    }}
-                                    onClick={() => setExpandedScenarioId(
-                                        expandedScenarioId === scenarioId ? null : scenarioId
-                                    )}
-                                >
-                                    <Stack direction="row" spacing={2} alignItems="center">
-                                        <Chip
-                                            label={scenario.status === 'completed' ? 'Passed' : 'Failed'}
-                                            color={scenario.status === 'completed' ? 'success' : 'error'}
-                                            size="small"
-                                        />
-                                        <Typography flex={1}>{scenario.title}</Typography>
-                                        <IconButton size="small">
-                                            {expandedScenarioId === scenarioId ? 
-                                                <KeyboardArrowUpIcon /> : 
-                                                <KeyboardArrowDownIcon />
-                                            }
-                                        </IconButton>
-                                    </Stack>
-                                    <Collapse in={expandedScenarioId === scenarioId}>
-                                        <Box sx={{ mt: 2, pl: 4 }}>
-                                            <List dense>
-                                                {scenario.steps.map((step, index) => (
-                                                    <ListItem
-                                                        key={index}
-                                                        sx={{
-                                                            display: 'flex',
-                                                            alignItems: 'flex-start',
-                                                            py: 1,
-                                                            borderBottom: (theme) =>
-                                                                index < scenario.steps.length - 1 ?
-                                                                `1px solid ${theme.palette.divider}` : 'none'
-                                                        }}
-                                                    >
-                                                        {step.status === 'failed' ?
-                                                            <ErrorIcon fontSize="small" color="error" sx={{ mr: 1 }} /> :
-                                                            <CheckCircleIcon fontSize="small" color="success" sx={{ mr: 1 }} />
-                                                        }
-                                                        <ListItemText
-                                                            primary={step.content}
-                                                            sx={{
-                                                                color: step.status === 'failed' ? 'error.main' : 'success.main'
-                                                            }}
-                                                        />
-                                                    </ListItem>
-                                                ))}
-                                            </List>
-                                        </Box>
-                                    </Collapse>
-                                </Paper>
-                            ))}
-                        </Stack>
                     </Paper>
                 )}
 

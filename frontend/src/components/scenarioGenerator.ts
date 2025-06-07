@@ -2,17 +2,25 @@ import { sendRequest } from '../utils/api';
 import { testRunner } from './testRunner';
 
 export interface GeneratedScenario {
-    title: string;
-    content: string;
+    id: string;         // Unique identifier for the scenario
+    title: string;      // e.g. "Validate basic response structure"
+    content: string;    // The actual scenario steps as text
 }
 
 interface ScenarioTemplate {
+    id: string;
     title: string;
     steps: string[];
 }
 
+// Helper function to generate unique IDs
+function generateId(): string {
+    return `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
 function generateBasicValidationScenario(endpoint: string): ScenarioTemplate {
     return {
+        id: generateId(),
         title: "Validate basic response structure",
         steps: [
             `Given the API endpoint "${endpoint}"`,
@@ -72,6 +80,7 @@ function generateResponseStructureScenarios(response: any): ScenarioTemplate[] {
         const assertions = analyzeValue([path], value);
         
         scenarios.push({
+            id: generateId(),
             title: `Validate ${path} structure`,
             steps: [
                 `Given the API endpoint "${response.requestUrl}"`,
@@ -90,6 +99,7 @@ function generateStatusScenarios(response: any): ScenarioTemplate[] {
     if (!response?.status) return scenarios;
 
     scenarios.push({
+        id: generateId(),
         title: `Validate ${response.status} response`,
         steps: [
             `Given the API endpoint "${response.requestUrl}"`,
@@ -112,6 +122,7 @@ function generateHeaderValidationScenarios(response: any): ScenarioTemplate[] {
     const headerEntries = Object.entries(response.headers);
     if (headerEntries.length > 0) {
         scenarios.push({
+            id: generateId(),
             title: "Validate response headers",
             steps: [
                 `Given the API endpoint "${response.requestUrl}"`,
@@ -141,6 +152,7 @@ export const handleGenerateScenarios = (config: {
     if (!lastResponse) {
         return [
             {
+                id: generateId(),
                 title: "Basic API validation",
                 content: generateBasicValidationScenario(path).steps.join('\n')
             }
@@ -157,6 +169,7 @@ export const handleGenerateScenarios = (config: {
 
     // Convert templates to actual scenarios
     return allScenarios.map(template => ({
+        id: template.id,
         title: template.title,
         content: template.steps.join('\n')
     }));
