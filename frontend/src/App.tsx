@@ -15,7 +15,13 @@ interface ApiLog {
     url: string;
     request: any;
     response: any;
-    test: any;
+}
+
+interface TestLog {
+    timestamp: string;
+    content: string;
+    status: 'passed' | 'failed';
+    color: string;
 }
 
 const App: React.FC = () => {
@@ -26,6 +32,8 @@ const App: React.FC = () => {
     });
     const [apiDrawerOpen, setApiDrawerOpen] = useState(false);
     const [apiLogs, setApiLogs] = useState<ApiLog[]>([]);
+    const [testLogs, setTestLogs] = useState<TestLog[]>([]);
+    const [selectedTab, setSelectedTab] = useState(0);
 
     const handleCloseSnackbar = () => {
         setSnackbar(prev => ({ ...prev, open: false }));
@@ -40,24 +48,44 @@ const App: React.FC = () => {
     };
 
     const logApiCall = (method: string, url: string, request: any, response: any) => {
+        // Handle test logs
+        if (method === 'TEST_LOG') {
+            const testLog: TestLog = {
+                timestamp: new Date().toISOString(),
+                content: request.content,
+                status: request.status,
+                color: request.color
+            };
+            setTestLogs(prev => [testLog, ...prev]);
+            setApiDrawerOpen(true);
+            setSelectedTab(1); // Switch to test results tab
+            return;
+        }
+
+        // Handle regular API logs
         const newLog: ApiLog = {
             timestamp: new Date().toISOString(),
             method,
             url,
             request,
-            response,
-            test: response.test
+            response
         };
         setApiLogs(prev => [newLog, ...prev]);
         // Only show drawer for non-GENERATE methods
         if (method !== 'GENERATE') {
             setApiDrawerOpen(true);
+            setSelectedTab(0); // Switch to API calls tab
         }
     };
 
     const handleClearApiLogs = () => {
         setApiLogs([]);
-        showNotification('API logs cleared', 'info');
+        setTestLogs([]);
+        showNotification('All logs cleared', 'info');
+    };
+
+    const handleTabChange = (newTab: number) => {
+        setSelectedTab(newTab);
     };
 
     const handleSaveTransaction = async (transaction: SavedTransaction) => {
@@ -120,13 +148,15 @@ const App: React.FC = () => {
                         onClose={() => setApiDrawerOpen(false)}
                         onClearAll={handleClearApiLogs}
                         apiLogs={apiLogs}
+                        testLogs={testLogs}
+                        selectedTab={selectedTab}
+                        onTabChange={handleTabChange}
                     />
                 </Box>
                 <Snackbar
                     open={snackbar.open}
                     autoHideDuration={6000}
                     onClose={handleCloseSnackbar}
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                 >
                     <Alert onClose={handleCloseSnackbar} severity={snackbar.severity}>
                         {snackbar.message}

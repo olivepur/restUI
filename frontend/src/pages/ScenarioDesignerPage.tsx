@@ -27,6 +27,9 @@ import {
     handlePlayScenario, 
     handleGenerateScenarios
 } from '../components/scenarioGenerator';
+import { RunScenarios } from '../components/runScenarios';
+import { ScenarioEditor } from '../components/ScenarioEditor';
+import { testRunner } from '../components/testRunner';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const STORAGE_KEY = 'scenarioDesigner';
@@ -86,6 +89,7 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     const [hasTestedRequest, setHasTestedRequest] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const [expandedScenario, setExpandedScenario] = useState<string | false>(false);
+    const [editingScenario, setEditingScenario] = useState<GeneratedScenario | null>(null);
 
     // Save state to localStorage whenever it changes
     useEffect(() => {
@@ -141,8 +145,17 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     };
 
     const handleEditClick = (scenario: GeneratedScenario) => {
-        // TODO: Implement scenario editing
-        console.log('Editing scenario:', scenario.title);
+        setEditingScenario(scenario);
+    };
+
+    const handleSaveScenario = (updatedScenario: GeneratedScenario) => {
+        setInteraction(prev => ({
+            ...prev,
+            scenarios: prev.scenarios?.map(s => 
+                s === editingScenario ? updatedScenario : s
+            )
+        }));
+        setEditingScenario(null);
     };
 
     const onGenerateScenarios = () => {
@@ -166,11 +179,25 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     };
 
     const handlePlayClick = async (scenario: GeneratedScenario) => {
-        await handlePlayScenario(scenario, {
-            onApiCall,
-            path: interaction.path,
-            headers: interaction.headers
-        });
+        try {
+            // Get the current authorization header
+            const authHeader = interaction.headers['Authorization'];
+            
+            testRunner.startScenario(scenario.title, authHeader);
+            
+            const steps = scenario.content.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.startsWith('Given') || line.startsWith('When') || line.startsWith('Then'));
+
+            for (const step of steps) {
+                await testRunner.runStep(step, { onApiCall });
+            }
+
+            testRunner.endScenario({ onApiCall });
+        } catch (error) {
+            console.error('Error playing scenario:', error);
+            testRunner.endScenario({ onApiCall });
+        }
     };
 
     const runTest = async () => {
@@ -439,11 +466,27 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                         >
                                             {scenario.content}
                                         </Paper>
+                                        <Box sx={{ mt: 2 }}>
+                                            <RunScenarios
+                                                scenario={scenario}
+                                                onRun={handlePlayClick}
+                                                disabled={false}
+                                            />
+                                        </Box>
                                     </AccordionDetails>
                                 </Accordion>
                             ))}
                         </Box>
                     </Paper>
+                )}
+
+                {editingScenario && (
+                    <ScenarioEditor
+                        open={true}
+                        scenario={editingScenario}
+                        onClose={() => setEditingScenario(null)}
+                        onSave={handleSaveScenario}
+                    />
                 )}
             </Box>
         </Container>
