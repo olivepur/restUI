@@ -19,7 +19,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { format } from 'date-fns';
-import { SavedTransaction } from '../types/FlowTypes';
+import type { SavedTransaction, SystemNode, TransactionEdge } from './FlowchartEditor/types';
 import { Theme } from '@mui/material/styles';
 
 // Define a color palette for transactions
@@ -115,6 +115,11 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     onViewTransaction,
     onDeleteTransaction
 }) => {
+    console.log('TransactionHistory render:', {
+        transactionCount: transactions.length,
+        transactions
+    });
+
     // Create a map of transaction IDs to colors
     const transactionColorMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -176,10 +181,10 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
         }
 
         // Create a row for each edge in the path
-        return transaction.selectedElements.edges.map((edge, index, edges) => {
+        return transaction.selectedElements.edges.map((edge: TransactionEdge, index: number, edges: TransactionEdge[]) => {
             // Find source and target nodes to get their labels
-            const sourceNode = transaction.selectedElements?.nodes.find(n => n.id === edge.source);
-            const targetNode = transaction.selectedElements?.nodes.find(n => n.id === edge.target);
+            const sourceNode = transaction.selectedElements?.nodes.find((n: SystemNode) => n.id === edge.source);
+            const targetNode = transaction.selectedElements?.nodes.find((n: SystemNode) => n.id === edge.target);
 
             return {
                 id: `${transaction.id}-${edge.id}`,
@@ -206,146 +211,177 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     };
 
     return (
-        <Box sx={{ p: 3 }}>
-            <Typography variant="h5" sx={{ mb: 3, fontWeight: 500, color: '#1a1a1a' }}>
-                Transaction History
+        <Box>
+            {transactions.length === 0 ? (
+                <Paper sx={{ p: 3, textAlign: 'center' }}>
+                    <Typography variant="h6" color="text.secondary">
+                        No transactions found
             </Typography>
+                </Paper>
+            ) : (
             <TableContainer component={Paper} sx={tableStyles.tableContainer}>
                 <Table sx={tableStyles.table}>
                     <TableHead>
                         <TableRow>
-                            <TableCell>ID</TableCell>
-                            <TableCell>Source</TableCell>
-                            <TableCell>Target</TableCell>
+                                <TableCell>Transaction ID</TableCell>
+                                <TableCell>From → To</TableCell>
                             <TableCell>Method</TableCell>
                             <TableCell>Path</TableCell>
-                            <TableCell>Run Status</TableCell>
-                            <TableCell>Test Status</TableCell>
+                                <TableCell>Status</TableCell>
                             <TableCell>Timestamp</TableCell>
-                            <TableCell>Actions</TableCell>
+                                <TableCell align="right">Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {allRows.map((row) => {
-                            const transaction = transactions.find(t => t.id === row.transactionId)!;
-                            const transactionColor = transactionColorMap.get(row.transactionId);
+                            {transactions.flatMap((transaction) => {
+                                // If there are edges in the transaction, show each edge
+                                if (transaction.edges && transaction.edges.length > 0) {
+                                    return transaction.edges.map((edge, index) => {
+                                        const sourceNode = transaction.nodes?.find(n => n.id === edge.source);
+                                        const targetNode = transaction.nodes?.find(n => n.id === edge.target);
+                                        const isFirstRow = index === 0;
+
                             return (
                                 <TableRow
-                                    key={row.id}
-                                    className={row.isFirstRow ? 'transaction-row' : 'continuation-row'}
+                                                key={`${transaction.id}-${edge.id}`}
                                     sx={{
                                         '&:last-child td, &:last-child th': { border: 0 },
-                                        bgcolor: alpha(transactionColor || '#2196f3', row.isFirstRow ? 0.04 : 0.02),
-                                    }}
-                                >
+                                                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                                                    borderLeft: isFirstRow ? '3px solid #2196f3' : 'none',
+                                                    bgcolor: isFirstRow ? 'rgba(33, 150, 243, 0.04)' : 'inherit'
+                                                }}
+                                            >
+                                                <TableCell sx={tableStyles.idCell}>
+                                                    {isFirstRow ? transaction.id.slice(0, 8) : ''}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {sourceNode?.label} → {targetNode?.label}
+                                                </TableCell>
+                                                <TableCell sx={tableStyles.methodCell}>
+                                                    {edge.operation || transaction.request.method}
+                                                </TableCell>
+                                                <TableCell>{edge.path || transaction.request.path}</TableCell>
+                                                <TableCell>
+                                                    <Chip
+                                                        label={transaction.status}
+                                                        color={
+                                                            transaction.status === 'success' ? 'success' :
+                                                            transaction.status === 'failed' ? 'error' :
+                                                            transaction.status === 'pending' ? 'warning' : 'default'
+                                                        }
+                                                        size="small"
+                                                    />
+                                                </TableCell>
                                     <TableCell>
-                                        {row.isFirstRow && (
-                                            <Stack direction="row" spacing={1} alignItems="center">
-                                                <Typography variant="body2" sx={tableStyles.idCell}>
-                                                    {formatId(row.transactionId)}
-                                                </Typography>
+                                                    {format(new Date(transaction.timestamp), 'MMM dd, yyyy HH:mm:ss')}
+                                                </TableCell>
+                                                <TableCell align="right">
+                                                    {isFirstRow && (
+                                                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                                            <Tooltip title="View Details">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => onViewTransaction?.(transaction)}
+                                                                >
+                                                                    <VisibilityIcon fontSize="small" />
+                                                                </IconButton>
+                                                            </Tooltip>
                                                 <Tooltip title="Copy ID">
                                                     <IconButton 
                                                         size="small"
-                                                        onClick={() => handleCopyId(row.transactionId)}
-                                                        sx={{
-                                                            '&:hover': {
-                                                                backgroundColor: alpha(transactionColor || '#2196f3', 0.1),
-                                                            }
-                                                        }}
+                                                                    onClick={() => navigator.clipboard.writeText(transaction.id)}
                                                     >
                                                         <ContentCopyIcon fontSize="small" />
                                                     </IconButton>
                                                 </Tooltip>
+                                                            <Tooltip title="Delete">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => onDeleteTransaction?.(transaction.id)}
+                                                                    color="error"
+                                                                >
+                                                                    <DeleteIcon fontSize="small" />
+                                                                </IconButton>
+                                                            </Tooltip>
                                             </Stack>
                                         )}
                                     </TableCell>
-                                    <TableCell>{row.source}</TableCell>
-                                    <TableCell>{row.target}</TableCell>
-                                    <TableCell sx={tableStyles.methodCell}>{row.method}</TableCell>
-                                    <TableCell>{row.path}</TableCell>
+                                            </TableRow>
+                                        );
+                                    });
+                                } else {
+                                    // If no edges, show a single row with transaction info
+                                    return (
+                                        <TableRow
+                                            key={transaction.id}
+                                            sx={{
+                                                '&:last-child td, &:last-child th': { border: 0 },
+                                                '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+                                                borderLeft: '3px solid #2196f3',
+                                                bgcolor: 'rgba(33, 150, 243, 0.04)'
+                                            }}
+                                        >
+                                            <TableCell sx={tableStyles.idCell}>
+                                                {transaction.id.slice(0, 8)}
+                                    </TableCell>
+                                            <TableCell>
+                                                {transaction.sourceNode} → {transaction.targetNode}
+                                            </TableCell>
+                                            <TableCell sx={tableStyles.methodCell}>
+                                                {transaction.request.method}
+                                            </TableCell>
+                                            <TableCell>{transaction.request.path}</TableCell>
                                     <TableCell>
                                         <Chip 
-                                            label={row.status || 'Not Run'}
-                                            color={getStatusColor(row.status || 'Not Run')}
+                                                    label={transaction.status}
+                                                    color={
+                                                        transaction.status === 'success' ? 'success' :
+                                                        transaction.status === 'failed' ? 'error' :
+                                                        transaction.status === 'pending' ? 'warning' : 'default'
+                                                    }
                                             size="small"
-                                            sx={{
-                                                fontWeight: 500,
-                                                '& .MuiChip-label': {
-                                                    px: 2,
-                                                }
-                                            }}
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <Chip 
-                                            label={transaction.test?.result || 'Not Tested'}
-                                            color={getStatusColor(transaction.test?.result || 'Not Tested')}
-                                            size="small"
-                                            sx={{
-                                                fontWeight: 500,
-                                                '& .MuiChip-label': {
-                                                    px: 2,
-                                                }
-                                            }}
-                                        />
+                                                {format(new Date(transaction.timestamp), 'MMM dd, yyyy HH:mm:ss')}
                                     </TableCell>
-                                    <TableCell>
-                                        {row.timestamp && formatTimestamp(row.timestamp)}
-                                    </TableCell>
-                                    <TableCell>
-                                        {row.isFirstRow && (
-                                            <Stack 
-                                                direction="row" 
-                                                spacing={1}
-                                                sx={tableStyles.actionButtons}
-                                            >
+                                            <TableCell align="right">
+                                                <Stack direction="row" spacing={1} justifyContent="flex-end">
                                                 <Tooltip title="View Details">
                                                     <IconButton
                                                         size="small"
                                                         onClick={() => onViewTransaction?.(transaction)}
-                                                        sx={{
-                                                            color: 'primary.main',
-                                                            '&:hover': {
-                                                                backgroundColor: alpha(transactionColor || '#2196f3', 0.1),
-                                                            }
-                                                        }}
                                                     >
-                                                        <VisibilityIcon />
+                                                            <VisibilityIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                    <Tooltip title="Copy ID">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => navigator.clipboard.writeText(transaction.id)}
+                                                        >
+                                                            <ContentCopyIcon fontSize="small" />
                                                     </IconButton>
                                                 </Tooltip>
-                                                <Tooltip title="Delete Transaction">
+                                                    <Tooltip title="Delete">
                                                     <IconButton
                                                         size="small"
-                                                        onClick={() => handleDelete(row.transactionId)}
-                                                        sx={{
-                                                            color: 'error.main',
-                                                            '&:hover': {
-                                                                backgroundColor: 'error.light',
-                                                            }
-                                                        }}
+                                                            onClick={() => onDeleteTransaction?.(transaction.id)}
+                                                            color="error"
                                                     >
-                                                        <DeleteIcon />
+                                                            <DeleteIcon fontSize="small" />
                                                     </IconButton>
                                                 </Tooltip>
                                             </Stack>
-                                        )}
                                     </TableCell>
                                 </TableRow>
                             );
-                        })}
-                        {transactions.length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        No transactions recorded yet
-                                    </Typography>
-                                </TableCell>
-                            </TableRow>
-                        )}
+                                }
+                            })}
                     </TableBody>
                 </Table>
             </TableContainer>
+            )}
         </Box>
     );
 }; 
