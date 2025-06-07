@@ -34,6 +34,7 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ErrorIcon from '@mui/icons-material/Error';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import SaveIcon from '@mui/icons-material/Save';
 import { 
     GeneratedScenario, 
     handlePlayScenario, 
@@ -89,6 +90,13 @@ interface Interaction {
     useProxy: boolean;
 }
 
+interface SavedState {
+    [scenarioId: string]: {
+        lastSavedAt?: string;
+        lastRunId?: string;
+    };
+}
+
 const getScenarioStatus = (scenarioId: string, testResults: TestResults) => {
     // Get all runs for this scenario
     const scenarioRuns = Object.values(testResults).filter(run => run.scenarioId === scenarioId);
@@ -111,6 +119,38 @@ const getScenarioStatus = (scenarioId: string, testResults: TestResults) => {
     
     // If we get here, all runs must be completed successfully
     return 'success';
+};
+
+const prepareScenarioData = (scenario: GeneratedScenario, testResults: TestResults) => {
+    // Get all runs for this scenario
+    const scenarioRuns = Object.values(testResults)
+        .filter(run => run.scenarioId === scenario.id)
+        .map(run => ({
+            id: run.id,
+            status: run.status,
+            startTime: run.startTime,
+            endTime: run.endTime,
+            steps: run.steps.map(step => ({
+                content: step.content,
+                status: step.status,
+                results: {
+                    expected: step.details?.expected,
+                    actual: step.details?.actual,
+                    error: step.details?.error,
+                    suggestion: step.details?.suggestion
+                }
+            }))
+        }));
+
+    return {
+        scenario: {
+            id: scenario.id,
+            title: scenario.title,
+            content: scenario.content,
+            created_at: new Date().toISOString()
+        },
+        runs: scenarioRuns
+    };
 };
 
 export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onApiCall }) => {
@@ -158,6 +198,7 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     const [editingScenario, setEditingScenario] = useState<GeneratedScenario | null>(null);
     const [testResults, setTestResults] = useState<TestResults>({});
     const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null);
+    const [savedState, setSavedState] = useState<SavedState>({});
 
     // Save state to localStorage whenever it changes
     useEffect(() => {
@@ -217,14 +258,43 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
         setEditingScenario(scenario);
     };
 
-    const handleSaveScenario = (updatedScenario: GeneratedScenario) => {
-        setInteraction(prev => ({
+    // Helper to check if scenario has unsaved changes
+    const hasUnsavedChanges = (scenario: GeneratedScenario) => {
+        const state = savedState[scenario.id];
+        if (!state?.lastSavedAt) {
+            return true; // Never saved
+        }
+
+        // Get the latest run for this scenario
+        const latestRun = Object.values(testResults)
+            .filter(run => run.scenarioId === scenario.id)
+            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0];
+
+        // If there's a new run that hasn't been saved
+        if (latestRun && (!state.lastRunId || state.lastRunId !== latestRun.id)) {
+            return true;
+        }
+
+        return false;
+    };
+
+    const handleSaveScenario = (scenario: GeneratedScenario) => {
+        const data = prepareScenarioData(scenario, testResults);
+        console.log('Scenario data to be saved:', data);
+
+        // Get the latest run ID for this scenario
+        const latestRun = Object.values(testResults)
+            .filter(run => run.scenarioId === scenario.id)
+            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0];
+
+        // Update saved state
+        setSavedState(prev => ({
             ...prev,
-            scenarios: prev.scenarios?.map(s => 
-                s === editingScenario ? updatedScenario : s
-            )
+            [scenario.id]: {
+                lastSavedAt: new Date().toISOString(),
+                lastRunId: latestRun?.id
+            }
         }));
-        setEditingScenario(null);
     };
 
     const onGenerateScenarios = () => {
@@ -244,6 +314,15 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                 ...prev,
                 scenarios: newScenarios
             }));
+            
+            // Mark all new scenarios as unsaved
+            const newSavedState = { ...savedState };
+            newScenarios.forEach(scenario => {
+                if (!newSavedState[scenario.id]) {
+                    newSavedState[scenario.id] = {};
+                }
+            });
+            setSavedState(newSavedState);
         }
     };
 
@@ -589,6 +668,25 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                             spacing={1}
                                             onClick={(e) => e.stopPropagation()}
                                         >
+                                            <Tooltip title="Save scenario">
+                                                <span>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleSaveScenario(scenario);
+                                                        }}
+                                                        color={hasUnsavedChanges(scenario) ? "primary" : "default"}
+                                                        sx={{
+                                                            ...(hasUnsavedChanges(scenario) && {
+                                                                backgroundColor: 'action.hover'
+                                                            })
+                                                        }}
+                                                    >
+                                                        <SaveIcon />
+                                                    </IconButton>
+                                                </span>
+                                            </Tooltip>
                                             <Tooltip title="Edit scenario">
                                                 <span>
                                                     <IconButton

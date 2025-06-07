@@ -32,17 +32,12 @@ interface RunScenariosProps {
 interface StepResult {
     step: string;
     status: 'pending' | 'running' | 'completed' | 'failed';
-    results: Array<{
+    results: {
         suggestion?: string;
         expected?: any;
         actual?: any;
         error?: string;
-        details?: {
-            suggestion?: string;
-            expected?: any;
-            actual?: any;
-        };
-    }>;
+    }[];
 }
 
 interface TestRun {
@@ -106,25 +101,31 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
         try {
             await this.props.onRun(scenario);
             
-            // Update the run status
-            this.setState(prev => ({
-                isRunning: false,
-                testRuns: prev.testRuns.map(run => 
-                    run.id === runId ? {
-                        ...run,
-                        status: 'completed',
-                        steps: run.steps.map(step => ({
-                            ...step,
-                            status: 'completed'
-                        })),
-                        endTime: new Date().toISOString()
-                    } : run
-                )
-            }));
+            // Get the latest test results for this run
+            const currentRun = this.state.testRuns.find(run => run.id === runId);
+            if (currentRun) {
+                // Check if any step failed
+                const hasFailedSteps = currentRun.steps.some(step => step.status === 'failed');
+                
+                this.setState(prev => ({
+                    isRunning: false,
+                    testRuns: prev.testRuns.map(run => 
+                        run.id === runId ? {
+                            ...run,
+                            status: hasFailedSteps ? 'failed' : 'completed',
+                            steps: run.steps.map(step => ({
+                                ...step,
+                                // Keep the existing status if it's failed, otherwise mark as completed
+                                status: step.status === 'failed' ? 'failed' : 'completed'
+                            })),
+                            endTime: new Date().toISOString()
+                        } : run
+                    )
+                }));
+            }
         } catch (error) {
             console.error('Error running scenario:', error);
             
-            // Update the run status
             this.setState(prev => ({
                 isRunning: false,
                 testRuns: prev.testRuns.map(run => 
@@ -133,7 +134,8 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
                         status: 'failed',
                         steps: run.steps.map(step => ({
                             ...step,
-                            status: 'failed'
+                            // Only update pending steps to failed
+                            status: step.status === 'pending' ? 'failed' : step.status
                         })),
                         endTime: new Date().toISOString()
                     } : run
