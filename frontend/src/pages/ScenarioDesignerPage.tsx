@@ -20,7 +20,9 @@ import {
     Collapse,
     List,
     ListItem,
-    ListItemText
+    ListItemText,
+    FormControlLabel,
+    Switch
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AddIcon from '@mui/icons-material/Add';
@@ -39,6 +41,7 @@ import {
 import { RunScenarios } from '../components/runScenarios';
 import { ScenarioEditor } from '../components/ScenarioEditor';
 import { testRunner } from '../components/testRunner';
+import { sendRequest } from '../utils/api';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const STORAGE_KEY = 'scenarioDesigner';
@@ -54,10 +57,12 @@ interface Interaction {
     body: string;
     lastResponse?: any;
     scenarios?: GeneratedScenario[];
+    useProxy: boolean;
 }
 
 interface TestResult {
     type: 'test-log';
+    scenarioId: string;
     content: string;
     status: 'passed' | 'failed';
     color: string;
@@ -66,6 +71,7 @@ interface TestResult {
 
 interface TestResults {
     [scenarioId: string]: {
+        id: string;
         title: string;
         status: 'running' | 'completed' | 'failed';
         steps: TestResult[];
@@ -81,7 +87,7 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                 const parsed = JSON.parse(savedState);
                 return {
                     method: parsed.method || 'GET',
-                    path: parsed.path || '',
+                    path: parsed.path || 'https://api.restful-api.dev/objects',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': parsed.headers?.Authorization || 'Bearer ',
@@ -89,7 +95,8 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                     },
                     body: parsed.body || '',
                     lastResponse: parsed.lastResponse,
-                    scenarios: parsed.scenarios || []
+                    scenarios: parsed.scenarios || [],
+                    useProxy: parsed.useProxy ?? true // Default to true for backward compatibility
                 };
             } catch (e) {
                 console.error('Error parsing saved state:', e);
@@ -97,14 +104,15 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
         }
         return {
             method: 'GET',
-            path: '',
+            path: 'https://api.restful-api.dev/objects',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer '
             },
             body: '',
             lastResponse: undefined,
-            scenarios: []
+            scenarios: [],
+            useProxy: true
         };
     };
 
@@ -124,7 +132,8 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
             headers: interaction.headers,
             body: interaction.body,
             lastResponse: interaction.lastResponse,
-            scenarios: interaction.scenarios || []
+            scenarios: interaction.scenarios || [],
+            useProxy: interaction.useProxy
         }));
     }, [interaction]);
 
@@ -205,10 +214,13 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
 
     const handlePlayClick = async (scenario: GeneratedScenario) => {
         try {
+            // Generate a unique scenario ID
+            const scenarioId = `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
             // Get the current authorization header
             const authHeader = interaction.headers['Authorization'];
             
-            testRunner.startScenario(scenario.title, authHeader);
+            testRunner.startScenario(scenario.title, authHeader, scenarioId);
             
             const steps = scenario.content.split('\n')
                 .map(line => line.trim())
@@ -228,13 +240,7 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     const runTest = async () => {
         try {
             const originalUrl = interaction.path.trim();
-            const requestUrl = originalUrl.startsWith('http') 
-                ? `http://localhost:8080/api/proxy${originalUrl.replace('https://api.int.group-vehicle-file.com', '')}`
-                : `http://localhost:8080${interaction.path.startsWith('/') ? interaction.path : `/${interaction.path}`}`;
-
-            console.log('Making request to:', requestUrl);
-            console.log('Method:', interaction.method);
-
+            
             // Prepare headers with defaults
             const requestHeaders: Record<string, string> = {
                 'Accept': 'application/json',
@@ -249,36 +255,17 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
             console.log('Headers:', requestHeaders);
             console.log('Body:', interaction.method !== 'GET' ? interaction.body : 'No body for GET request');
 
-            const request = {
+            const response = await sendRequest(originalUrl, {
                 method: interaction.method,
                 headers: requestHeaders,
-                body: interaction.method !== 'GET' ? interaction.body : undefined
-            };
-
-            const response = await fetch(requestUrl, request);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}\nResponse: ${errorText}`);
-            }
-
-            let responseData: any;
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                responseData = await response.json();
-            } else {
-                const text = await response.text();
-                try {
-                    responseData = JSON.parse(text);
-                } catch (e) {
-                    responseData = { text };
-                }
-            }
+                body: interaction.method !== 'GET' ? interaction.body : undefined,
+                useProxy: interaction.useProxy
+            });
 
             // Store the response data for scenario generation
             setInteraction(prev => ({
                 ...prev,
-                lastResponse: responseData
+                lastResponse: response.body
             }));
             setHasTestedRequest(true);
 
@@ -286,12 +273,16 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
             if (onApiCall) {
                 onApiCall(
                     interaction.method,
-                    requestUrl,
-                    request,
+                    originalUrl,
+                    {
+                        method: interaction.method,
+                        headers: requestHeaders,
+                        body: interaction.method !== 'GET' ? interaction.body : undefined
+                    },
                     {
                         status: response.status,
-                        headers: Object.fromEntries(response.headers.entries()),
-                        body: responseData
+                        headers: response.headers,
+                        body: response.body
                     }
                 );
             }
@@ -330,10 +321,10 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
             if (result.content.startsWith('Scenario:')) {
                 // This is a scenario summary
                 const scenarioTitle = result.content.split('(')[0].replace('Scenario:', '').trim();
-                const scenarioId = `scenario-${Date.now()}`;
                 setTestResults(prev => ({
                     ...prev,
-                    [scenarioId]: {
+                    [result.scenarioId]: {
+                        id: result.scenarioId,
                         title: scenarioTitle,
                         status: result.status === 'passed' ? 'completed' : 'failed',
                         steps: []
@@ -342,14 +333,16 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
             } else {
                 // This is a step result
                 setTestResults(prev => {
-                    const currentScenarioId = Object.keys(prev).pop();
-                    if (!currentScenarioId) return prev;
+                    if (!result.scenarioId || !prev[result.scenarioId]) {
+                        console.warn('Received step result for unknown scenario:', result);
+                        return prev;
+                    }
                     
                     return {
                         ...prev,
-                        [currentScenarioId]: {
-                            ...prev[currentScenarioId],
-                            steps: [...prev[currentScenarioId].steps, result]
+                        [result.scenarioId]: {
+                            ...prev[result.scenarioId],
+                            steps: [...prev[result.scenarioId].steps, result]
                         }
                     };
                 });
@@ -374,18 +367,32 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                         Request Details
                     </Typography>
                     <Stack spacing={3}>
-                        <FormControl>
-                            <InputLabel>Method</InputLabel>
-                            <Select
-                                value={interaction.method}
-                                onChange={(e) => setInteraction(prev => ({ ...prev, method: e.target.value }))}
-                                label="Method"
-                            >
-                                {HTTP_METHODS.map(method => (
-                                    <MenuItem key={method} value={method}>{method}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                            <FormControl sx={{ minWidth: 120 }}>
+                                <InputLabel>Method</InputLabel>
+                                <Select
+                                    value={interaction.method}
+                                    onChange={(e) => setInteraction(prev => ({ ...prev, method: e.target.value }))}
+                                    label="Method"
+                                >
+                                    {HTTP_METHODS.map(method => (
+                                        <MenuItem key={method} value={method}>{method}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={interaction.useProxy}
+                                        onChange={(e) => setInteraction(prev => ({ 
+                                            ...prev, 
+                                            useProxy: e.target.checked 
+                                        }))}
+                                    />
+                                }
+                                label="Use Proxy"
+                            />
+                        </Stack>
 
                         <TextField
                             label="Path"
@@ -489,40 +496,50 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                         }}
                                     >
                                         <Typography>{scenario.title}</Typography>
-                                        <Stack direction="row" spacing={1}>
+                                        <Stack 
+                                            direction="row" 
+                                            spacing={1}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
                                             <Tooltip title="Run scenario">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={async (e) => {
-                                                        e.stopPropagation();
-                                                        await handlePlayClick(scenario);
-                                                    }}
-                                                >
-                                                    <PlayArrowIcon />
-                                                </IconButton>
+                                                <span>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            await handlePlayClick(scenario);
+                                                        }}
+                                                    >
+                                                        <PlayArrowIcon />
+                                                    </IconButton>
+                                                </span>
                                             </Tooltip>
                                             <Tooltip title="Edit scenario">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEditClick(scenario);
-                                                    }}
-                                                >
-                                                    <EditIcon />
-                                                </IconButton>
+                                                <span>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleEditClick(scenario);
+                                                        }}
+                                                    >
+                                                        <EditIcon />
+                                                    </IconButton>
+                                                </span>
                                             </Tooltip>
                                             <Tooltip title="Delete scenario">
-                                                <IconButton
-                                                    size="small"
-                                                    color="error"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteScenario(scenario);
-                                                    }}
-                                                >
-                                                    <DeleteIcon />
-                                                </IconButton>
+                                                <span>
+                                                    <IconButton
+                                                        size="small"
+                                                        color="error"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteScenario(scenario);
+                                                        }}
+                                                    >
+                                                        <DeleteIcon />
+                                                    </IconButton>
+                                                </span>
                                             </Tooltip>
                                         </Stack>
                                     </AccordionSummary>

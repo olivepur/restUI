@@ -1,33 +1,73 @@
 const API_PROXY_BASE = 'http://localhost:8080/api/proxy';
 const API_BASE = 'https://api.int.group-vehicle-file.com';
 
-export const transformUrl = (url: string): string => {
+interface RequestOptions extends RequestInit {
+    useProxy?: boolean;
+}
+
+export const transformUrl = (url: string, useProxy: boolean = true): string => {
+    // If it's already a full URL
     if (url.startsWith('http')) {
-        return `${API_PROXY_BASE}${url.replace(API_BASE, '')}`;
+        if (useProxy) {
+            // If using proxy, route through localhost
+            return `${API_PROXY_BASE}${url.replace(API_BASE, '')}`;
+        }
+        // If not using proxy, use the URL as is
+        return url;
     }
-    return `http://localhost:8080${url.startsWith('/') ? url : `/${url}`}`;
+
+    // If it's just a path
+    if (useProxy) {
+        // If using proxy, route through localhost
+        return `http://localhost:8080${url.startsWith('/') ? url : `/${url}`}`;
+    }
+    // If not using proxy, construct full URL with API_BASE
+    return `${API_BASE}${url.startsWith('/') ? url : `/${url}`}`;
 };
 
-export const sendRequest = async (url: string, options: RequestInit = {}) => {
-    const transformedUrl = transformUrl(url);
+export const sendRequest = async (url: string, options: RequestOptions = {}) => {
+    const { useProxy = true, ...requestOptions } = options;
+    
+    console.log('Sending request to:', url);
+    console.log('Using proxy:', useProxy);
+    
+    const transformedUrl = transformUrl(url, useProxy);
+    console.log('Transformed URL:', transformedUrl);
+    
     const defaultHeaders = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
         'Authorization': localStorage.getItem('token') || ''
     };
 
-    const response = await fetch(transformedUrl, {
-        ...options,
+    // Only include credentials when using proxy
+    const fetchOptions: RequestInit = {
+        ...requestOptions,
         headers: {
             ...defaultHeaders,
-            ...options.headers
+            ...requestOptions.headers
         },
-        credentials: 'include'
-    });
+        ...(useProxy ? { credentials: 'include' as const } : {})
+    };
+
+    const response = await fetch(transformedUrl, fetchOptions);
+
+    let responseBody;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+        try {
+            responseBody = await response.json();
+        } catch (e) {
+            console.warn('Failed to parse JSON response:', e);
+            responseBody = await response.text();
+        }
+    } else {
+        responseBody = await response.text();
+    }
 
     return {
         status: response.status,
-        body: await response.json(),
+        body: responseBody,
         headers: Object.fromEntries(response.headers.entries())
     };
 }; 

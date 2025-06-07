@@ -33,6 +33,7 @@ interface ScenarioStep {
 }
 
 interface ScenarioExecution {
+    id: string;
     title: string;
     steps: ScenarioStep[];
     startTime: string;
@@ -60,8 +61,9 @@ class TestRunner {
         return this.response;
     }
 
-    startScenario(title: string, authHeader?: string) {
+    startScenario(title: string, authHeader?: string, scenarioId?: string) {
         this.currentScenario = {
+            id: scenarioId || `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             title,
             steps: [],
             startTime: new Date().toISOString(),
@@ -91,7 +93,7 @@ class TestRunner {
         const endpointMatch = step.match(/"([^"]+)"/);
         if (endpointMatch && step.includes('endpoint')) {
             this.context.endpoint = endpointMatch[1];
-            results.push({
+                    results.push({
                 name: 'Setup endpoint',
                 passed: true,
                 details: { endpoint: this.context.endpoint }
@@ -124,7 +126,7 @@ class TestRunner {
                 details: { variable: varName, value: varValue }
             });
         }
-
+        
         return results;
     }
 
@@ -418,6 +420,7 @@ class TestRunner {
                         'test-result',
                         {
                             type: 'test-log',
+                            scenarioId: this.currentScenario.id,
                             content: stepDisplay,
                             status: stepResult.status,
                             color: results[0]?.details?.isUnimplemented ? '#ff9800' : (stepResult.status === 'passed' ? '#4caf50' : '#f44336'),
@@ -436,7 +439,7 @@ class TestRunner {
             }];
 
             // Send error status
-            if (context.onApiCall) {
+            if (context.onApiCall && this.currentScenario) {
                 const errorDisplay = `✗ ${step} → ${error instanceof Error ? error.message : 'Step execution failed'}`;
                 
                 context.onApiCall(
@@ -444,6 +447,7 @@ class TestRunner {
                     'test-result',
                     {
                         type: 'test-log',
+                        scenarioId: this.currentScenario.id,
                         content: errorDisplay,
                         status: 'failed',
                         color: '#f44336',
@@ -490,6 +494,7 @@ class TestRunner {
                     'test-result',
                     {
                         type: 'test-log',
+                        scenarioId: this.currentScenario.id,
                         content: `Scenario: ${this.currentScenario.title} (${status})`,
                         status: status,
                         color: status === 'passed' ? '#4caf50' : '#f44336',
