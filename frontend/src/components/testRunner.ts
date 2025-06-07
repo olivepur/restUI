@@ -482,18 +482,17 @@ class TestRunner {
             this.currentScenario.endTime = new Date().toISOString();
             this.currentScenario.status = this.currentScenario.steps.some(s => s.status === 'failed') ? 'failed' : 'completed';
 
-            // Send final summary
+            // Send final summary with proper test log format
             if (context.onApiCall) {
-                const summary = `Scenario: ${this.currentScenario.title} (${this.currentScenario.status})`;
-                
+                const status = this.currentScenario.status === 'completed' ? 'passed' : 'failed';
                 context.onApiCall(
                     'TEST_LOG',
                     'test-result',
                     {
                         type: 'test-log',
-                        content: summary,
-                        status: this.currentScenario.status === 'completed' ? 'passed' : 'failed',
-                        color: this.currentScenario.status === 'completed' ? '#4caf50' : '#f44336',
+                        content: `Scenario: ${this.currentScenario.title} (${status})`,
+                        status: status,
+                        color: status === 'passed' ? '#4caf50' : '#f44336',
                         timestamp: new Date().toISOString()
                     },
                     null

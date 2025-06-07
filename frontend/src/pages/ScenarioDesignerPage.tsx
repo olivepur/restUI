@@ -15,13 +15,22 @@ import {
     Accordion,
     AccordionSummary,
     AccordionDetails,
-    Tooltip
+    Tooltip,
+    Chip,
+    Collapse,
+    List,
+    ListItem,
+    ListItemText
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import ErrorIcon from '@mui/icons-material/Error';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { 
     GeneratedScenario, 
     handlePlayScenario, 
@@ -47,7 +56,21 @@ interface Interaction {
     scenarios?: GeneratedScenario[];
 }
 
+interface TestResult {
+    type: 'test-log';
+    content: string;
+    status: 'passed' | 'failed';
+    color: string;
+    timestamp: string;
+}
 
+interface TestResults {
+    [scenarioId: string]: {
+        title: string;
+        status: 'running' | 'completed' | 'failed';
+        steps: TestResult[];
+    };
+}
 
 export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onApiCall }) => {
     // Load saved state from localStorage
@@ -90,6 +113,8 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     const containerRef = useRef<HTMLDivElement>(null);
     const [expandedScenario, setExpandedScenario] = useState<string | false>(false);
     const [editingScenario, setEditingScenario] = useState<GeneratedScenario | null>(null);
+    const [testResults, setTestResults] = useState<TestResults>({});
+    const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null);
 
     // Save state to localStorage whenever it changes
     useEffect(() => {
@@ -190,13 +215,13 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                 .filter(line => line.startsWith('Given') || line.startsWith('When') || line.startsWith('Then'));
 
             for (const step of steps) {
-                await testRunner.runStep(step, { onApiCall });
+                await testRunner.runStep(step, { onApiCall: handleApiCall });
             }
 
-            testRunner.endScenario({ onApiCall });
+            testRunner.endScenario({ onApiCall: handleApiCall });
         } catch (error) {
             console.error('Error playing scenario:', error);
-            testRunner.endScenario({ onApiCall });
+            testRunner.endScenario({ onApiCall: handleApiCall });
         }
     };
 
@@ -288,6 +313,52 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                     }
                 );
             }
+        }
+    };
+
+    // Modify the onApiCall wrapper to organize results by scenario
+    const handleApiCall = (method: string, url: string, request: any, response: any) => {
+        if (method === 'TEST_LOG' && request?.type === 'test-log') {
+            const result = request as TestResult;
+            
+            // Ensure we have valid content
+            if (!result.content) {
+                console.warn('Received test log without content:', result);
+                return;
+            }
+
+            if (result.content.startsWith('Scenario:')) {
+                // This is a scenario summary
+                const scenarioTitle = result.content.split('(')[0].replace('Scenario:', '').trim();
+                const scenarioId = `scenario-${Date.now()}`;
+                setTestResults(prev => ({
+                    ...prev,
+                    [scenarioId]: {
+                        title: scenarioTitle,
+                        status: result.status === 'passed' ? 'completed' : 'failed',
+                        steps: []
+                    }
+                }));
+            } else {
+                // This is a step result
+                setTestResults(prev => {
+                    const currentScenarioId = Object.keys(prev).pop();
+                    if (!currentScenarioId) return prev;
+                    
+                    return {
+                        ...prev,
+                        [currentScenarioId]: {
+                            ...prev[currentScenarioId],
+                            steps: [...prev[currentScenarioId].steps, result]
+                        }
+                    };
+                });
+            }
+        }
+        
+        // Forward the call to the original onApiCall if provided
+        if (onApiCall) {
+            onApiCall(method, url, request, response);
         }
     };
 
@@ -477,6 +548,76 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                 </Accordion>
                             ))}
                         </Box>
+                    </Paper>
+                )}
+
+                {Object.entries(testResults).length > 0 && (
+                    <Paper sx={{ p: 3, mt: 3 }}>
+                        <Typography variant="h6" gutterBottom>
+                            Test Results
+                        </Typography>
+                        <Stack spacing={2}>
+                            {Object.entries(testResults).map(([scenarioId, scenario]) => (
+                                <Paper
+                                    key={scenarioId}
+                                    sx={{
+                                        p: 2,
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            bgcolor: 'action.hover'
+                                        }
+                                    }}
+                                    onClick={() => setExpandedScenarioId(
+                                        expandedScenarioId === scenarioId ? null : scenarioId
+                                    )}
+                                >
+                                    <Stack direction="row" spacing={2} alignItems="center">
+                                        <Chip
+                                            label={scenario.status === 'completed' ? 'Passed' : 'Failed'}
+                                            color={scenario.status === 'completed' ? 'success' : 'error'}
+                                            size="small"
+                                        />
+                                        <Typography flex={1}>{scenario.title}</Typography>
+                                        <IconButton size="small">
+                                            {expandedScenarioId === scenarioId ? 
+                                                <KeyboardArrowUpIcon /> : 
+                                                <KeyboardArrowDownIcon />
+                                            }
+                                        </IconButton>
+                                    </Stack>
+                                    <Collapse in={expandedScenarioId === scenarioId}>
+                                        <Box sx={{ mt: 2, pl: 4 }}>
+                                            <List dense>
+                                                {scenario.steps.map((step, index) => (
+                                                    <ListItem
+                                                        key={index}
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'flex-start',
+                                                            py: 1,
+                                                            borderBottom: (theme) =>
+                                                                index < scenario.steps.length - 1 ?
+                                                                `1px solid ${theme.palette.divider}` : 'none'
+                                                        }}
+                                                    >
+                                                        {step.status === 'failed' ?
+                                                            <ErrorIcon fontSize="small" color="error" sx={{ mr: 1 }} /> :
+                                                            <CheckCircleIcon fontSize="small" color="success" sx={{ mr: 1 }} />
+                                                        }
+                                                        <ListItemText
+                                                            primary={step.content}
+                                                            sx={{
+                                                                color: step.status === 'failed' ? 'error.main' : 'success.main'
+                                                            }}
+                                                        />
+                                                    </ListItem>
+                                                ))}
+                                            </List>
+                                        </Box>
+                                    </Collapse>
+                                </Paper>
+                            ))}
+                        </Stack>
                     </Paper>
                 )}
 
