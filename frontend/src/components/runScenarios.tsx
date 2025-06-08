@@ -22,16 +22,19 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import { GeneratedScenario } from './scenarioGenerator';
 import { testRunner } from './testRunner';
+import { TestResults, TestResult } from '../pages/ScenarioDesignerPage';
 
 interface RunScenariosProps {
     scenario: GeneratedScenario;
     onRun: (scenario: GeneratedScenario) => Promise<void>;
-    disabled?: boolean;
+    disabled: boolean;
+    testResults: TestResults;
+    onClearRuns: () => void;
 }
 
 interface StepResult {
     step: string;
-    status: 'pending' | 'running' | 'completed' | 'failed';
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'unimplemented';
     results: {
         suggestion?: string;
         expected?: any;
@@ -52,15 +55,69 @@ interface TestRun {
 
 interface RunScenariosState {
     isRunning: boolean;
-    testRuns: TestRun[];
     error?: string;
     isExpanded: boolean;
 }
 
+const getStatusColor = (status: string) => {
+    switch (status) {
+        case 'passed':
+            return '#4caf50';  // Green
+        case 'failed':
+            return '#f44336';  // Red
+        case 'unimplemented':
+            return '#ff9800';  // Orange
+        case 'running':
+            return '#2196f3';  // Blue
+        default:
+            return '#757575';  // Grey
+    }
+};
+
+const getStatusIcon = (status: string) => {
+    switch (status) {
+        case 'passed':
+            return '✓';
+        case 'failed':
+            return '✗';
+        case 'unimplemented':
+            return '?';
+        case 'running':
+            return '⟳';
+        default:
+            return '-';
+    }
+};
+
+const StepResult = ({ step }: { step: TestResult }) => {
+    return (
+        <div className="step-result" style={{ marginBottom: '8px' }}>
+            <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                color: getStatusColor(step.status),
+                fontFamily: 'monospace'
+            }}>
+                <span style={{ marginRight: '8px' }}>{getStatusIcon(step.status)}</span>
+                <span>{step.content}</span>
+            </div>
+            {step.details?.suggestion && (
+                <div style={{ 
+                    marginLeft: '24px', 
+                    color: step.status === 'unimplemented' ? '#ff9800' : '#f44336',
+                    fontSize: '0.9em',
+                    fontStyle: 'italic'
+                }}>
+                    {step.details.suggestion}
+                </div>
+            )}
+        </div>
+    );
+};
+
 export class RunScenarios extends React.Component<RunScenariosProps, RunScenariosState> {
     state: RunScenariosState = {
         isRunning: false,
-        testRuns: [],
         error: undefined,
         isExpanded: false
     };
@@ -73,94 +130,33 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
 
     handleRun = async () => {
         const { scenario } = this.props;
-        const steps = this.parseSteps(scenario.content);
-        const runId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        // Create a new test run
-        const newRun: TestRun = {
-            id: runId,
-            scenarioId: scenario.id,
-            title: scenario.title,
-            status: 'running',
-            steps: steps.map(step => ({
-                step,
-                status: 'pending',
-                results: []
-            })),
-            startTime: new Date().toISOString()
-        };
-
-        // Add the new run to the list
-        this.setState(prev => ({
+        
+        this.setState({
             isRunning: true,
-            testRuns: [newRun, ...prev.testRuns],
             error: undefined,
             isExpanded: true
-        }));
+        });
 
         try {
             await this.props.onRun(scenario);
-            
-            // Get the latest test results for this run
-            const currentRun = this.state.testRuns.find(run => run.id === runId);
-            if (currentRun) {
-                // Check if any step failed
-                const hasFailedSteps = currentRun.steps.some(step => step.status === 'failed');
-                
-                this.setState(prev => ({
-                    isRunning: false,
-                    testRuns: prev.testRuns.map(run => 
-                        run.id === runId ? {
-                            ...run,
-                            status: hasFailedSteps ? 'failed' : 'completed',
-                            steps: run.steps.map(step => ({
-                                ...step,
-                                // Keep the existing status if it's failed, otherwise mark as completed
-                                status: step.status === 'failed' ? 'failed' : 'completed'
-                            })),
-                            endTime: new Date().toISOString()
-                        } : run
-                    )
-                }));
-            }
+            this.setState({ isRunning: false });
         } catch (error) {
-            console.error('Error running scenario:', error);
-            
-            this.setState(prev => ({
+            console.error('❌ Error running scenario:', error);
+            this.setState({
                 isRunning: false,
-                testRuns: prev.testRuns.map(run => 
-                    run.id === runId ? {
-                        ...run,
-                        status: 'failed',
-                        steps: run.steps.map(step => ({
-                            ...step,
-                            // Only update pending steps to failed
-                            status: step.status === 'pending' ? 'failed' : step.status
-                        })),
-                        endTime: new Date().toISOString()
-                    } : run
-                ),
                 error: error instanceof Error ? error.message : 'Failed to run scenario'
-            }));
+            });
         }
     };
 
-    handleRemoveRun = (runId: string) => {
-        this.setState(prev => ({
-            testRuns: prev.testRuns.filter(run => run.id !== runId)
-        }));
-    };
-
-    handleClearAllRuns = () => {
-        this.setState({
-            testRuns: [],
-            error: undefined
-        });
-    };
-
     render() {
-        const { disabled } = this.props;
-        const { isRunning, testRuns, error, isExpanded } = this.state;
+        const { disabled, scenario, testResults, onClearRuns } = this.props;
+        const { isRunning, error } = this.state;
+
+        // Get runs for this scenario
+        const scenarioRuns = Object.values(testResults)
+            .filter((run): run is TestResults[string] => run.scenarioId === scenario.id)
+            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
         return (
             <Box>
@@ -173,11 +169,11 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
                     >
                         {isRunning ? 'Running...' : 'Run Scenario'}
                     </Button>
-                    {testRuns.length > 0 && (
+                    {scenarioRuns.length > 0 && (
                         <Button
                             variant="outlined"
                             color="error"
-                            onClick={this.handleClearAllRuns}
+                            onClick={onClearRuns}
                             startIcon={<ClearAllIcon />}
                             size="medium"
                         >
@@ -186,14 +182,14 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
                     )}
                 </Stack>
 
-                {testRuns.length > 0 && (
+                {scenarioRuns.length > 0 && (
                     <Stack spacing={2} sx={{ mt: 2 }}>
-                        {testRuns.map((run) => (
+                        {scenarioRuns.map((run) => (
                             <Paper key={run.id} sx={{ p: 2 }}>
                                 <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
                                     <Chip
-                                        label={run.status === 'completed' ? 'Passed' : 'Failed'}
-                                        color={run.status === 'completed' ? 'success' : 'error'}
+                                        label={run.status === 'passed' ? 'Passed' : 'Failed'}
+                                        color={run.status === 'passed' ? 'success' : 'error'}
                                         size="small"
                                     />
                                     <Typography variant="caption" color="text.secondary">
@@ -205,7 +201,7 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
                                     <Box sx={{ flexGrow: 1 }} />
                                     <IconButton
                                         size="small"
-                                        onClick={() => this.handleRemoveRun(run.id)}
+                                        onClick={() => console.warn('Remove run should be handled by parent')}
                                         color="error"
                                         title="Remove this run"
                                     >
@@ -216,7 +212,7 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
                                 <List>
                                     {run.steps.map((step, index) => (
                                         <ListItem
-                                            key={`${index}-${step.step}`}
+                                            key={`${index}-${step.content}`}
                                             sx={{
                                                 display: 'flex',
                                                 alignItems: 'flex-start',
@@ -230,51 +226,13 @@ export class RunScenarios extends React.Component<RunScenariosProps, RunScenario
                                                 <CircularProgress size={20} sx={{ mr: 1, mt: 0.5 }} />
                                             ) : step.status === 'failed' ? (
                                                 <ErrorIcon color="error" sx={{ mr: 1, mt: 0.5 }} />
-                                            ) : step.status === 'completed' ? (
+                                            ) : step.status === 'passed' ? (
                                                 <CheckCircleIcon color="success" sx={{ mr: 1, mt: 0.5 }} />
                                             ) : (
                                                 <Box sx={{ width: 20, height: 20, mr: 1 }} />
                                             )}
                                             <Box sx={{ flex: 1 }}>
-                                                <Typography
-                                                    sx={{
-                                                        color: step.status === 'failed' ? 'error.main' :
-                                                               step.status === 'completed' ? 'success.main' :
-                                                               'text.primary',
-                                                        fontWeight: 500,
-                                                        mb: step.results.length > 0 ? 1 : 0
-                                                    }}
-                                                >
-                                                    {step.step}
-                                                </Typography>
-                                                {step.results.length > 0 && (
-                                                    <Box sx={{ pl: 2, color: 'text.secondary' }}>
-                                                        {step.results.map((result, idx) => (
-                                                            <Box key={idx}>
-                                                                {result.suggestion && (
-                                                                    <Typography variant="body2" sx={{ fontStyle: 'italic', mb: 1 }}>
-                                                                        {result.suggestion}
-                                                                    </Typography>
-                                                                )}
-                                                                {result.expected !== undefined && (
-                                                                    <Typography variant="body2">
-                                                                        Expected: {JSON.stringify(result.expected)}
-                                                                    </Typography>
-                                                                )}
-                                                                {result.actual !== undefined && (
-                                                                    <Typography variant="body2">
-                                                                        Actual: {JSON.stringify(result.actual)}
-                                                                    </Typography>
-                                                                )}
-                                                                {result.error && (
-                                                                    <Typography variant="body2" color="error">
-                                                                        Error: {result.error}
-                                                                    </Typography>
-                                                                )}
-                                                            </Box>
-                                                        ))}
-                                                    </Box>
-                                                )}
+                                                <StepResult step={step} />
                                             </Box>
                                         </ListItem>
                                     ))}

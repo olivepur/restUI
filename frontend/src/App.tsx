@@ -1,13 +1,23 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { FlowchartEditor } from './components/FlowchartEditor';
 import { TransactionsHistoryPage } from './pages/TransactionsHistoryPage';
 import { ScenarioDesignerPage } from './pages/ScenarioDesignerPage';
-import { NavigationBar } from './components/common/NavigationBar';
 import { ApiDrawer } from './components/common/ApiDrawer';
 import type { SavedTransaction } from './components/FlowchartEditor/types';
-import { Snackbar, Alert, Box, IconButton } from '@mui/material';
+import { 
+    Snackbar, 
+    Alert, 
+    Box, 
+    IconButton, 
+    AppBar, 
+    Toolbar, 
+    Typography,
+    Button
+} from '@mui/material';
 import ListIcon from '@mui/icons-material/List';
+import { SettingsPage } from './pages/SettingsPage';
+import { Settings as SettingsIcon } from '@mui/icons-material';
 
 interface ApiLog {
     timestamp: string;
@@ -18,10 +28,19 @@ interface ApiLog {
 }
 
 interface TestLog {
-    timestamp: string;
+    type: 'test-log';
+    scenarioId: string;
+    scenarioRunId: string;
     content: string;
-    status: 'passed' | 'failed';
+    status: 'running' | 'completed' | 'failed';
     color: string;
+    timestamp: string;
+    details?: {
+        suggestion?: string;
+        expected?: any;
+        actual?: any;
+        error?: string;
+    };
 }
 
 const App: React.FC = () => {
@@ -51,10 +70,14 @@ const App: React.FC = () => {
         // Handle test logs
         if (method === 'TEST_LOG') {
             const testLog: TestLog = {
+                type: 'test-log',
+                scenarioId: request.scenarioId || 'default',
+                scenarioRunId: request.scenarioRunId || 'default',
                 timestamp: new Date().toISOString(),
                 content: request.content,
                 status: request.status,
-                color: request.color
+                color: request.color,
+                details: request.details
             };
             setTestLogs(prev => [testLog, ...prev]);
             setApiDrawerOpen(true);
@@ -110,15 +133,63 @@ const App: React.FC = () => {
     return (
         <Router>
             <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-                <NavigationBar>
-                    <IconButton
-                        color="inherit"
-                        onClick={() => setApiDrawerOpen(!apiDrawerOpen)}
-                        sx={{ ml: 2 }}
-                    >
-                        <ListIcon />
-                    </IconButton>
-                </NavigationBar>
+                <AppBar position="static">
+                    <Toolbar>
+                        <Typography 
+                            variant="h6" 
+                            component={Link} 
+                            to="/" 
+                            sx={{ 
+                                color: 'white', 
+                                textDecoration: 'none',
+                                mr: 4
+                            }}
+                        >
+                            RestUI
+                        </Typography>
+                        <Box sx={{ flexGrow: 1, display: 'flex', gap: 2 }}>
+                            <Button
+                                component={Link}
+                                to="/"
+                                color="inherit"
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Flow Chart
+                            </Button>
+                            <Button
+                                component={Link}
+                                to="/scenario-designer"
+                                color="inherit"
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Scenarios
+                            </Button>
+                            <Button
+                                component={Link}
+                                to="/transactions-history"
+                                color="inherit"
+                                sx={{ textTransform: 'none' }}
+                            >
+                                History
+                            </Button>
+                            <Button
+                                component={Link}
+                                to="/settings"
+                                color="inherit"
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Settings
+                            </Button>
+                        </Box>
+                        <IconButton
+                            color="inherit"
+                            onClick={() => setApiDrawerOpen(!apiDrawerOpen)}
+                            sx={{ ml: 2 }}
+                        >
+                            <ListIcon />
+                        </IconButton>
+                    </Toolbar>
+                </AppBar>
                 <Box sx={{ flexGrow: 1, display: 'flex' }}>
                     <Box sx={{ flexGrow: 1 }}>
                         <Routes>
@@ -140,6 +211,10 @@ const App: React.FC = () => {
                             <Route 
                                 path="/scenario-designer" 
                                 element={<ScenarioDesignerPage onApiCall={logApiCall} />} 
+                            />
+                            <Route 
+                                path="/settings" 
+                                element={<SettingsPage />} 
                             />
                         </Routes>
                     </Box>

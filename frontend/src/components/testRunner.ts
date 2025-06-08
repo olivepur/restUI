@@ -1,4 +1,5 @@
 import { sendRequest } from '../utils/api';
+import { useSettingsStore } from '../stores/settingsStore';
 
 interface TestContext {
     response: {
@@ -30,7 +31,7 @@ interface TestResult {
 interface ScenarioStep {
     type: 'Given' | 'When' | 'Then' | 'And';
     text: string;
-    status: 'passed' | 'failed';
+    status: 'running' | 'passed' | 'failed' | 'unimplemented';
     results: TestResult[];
     response?: any;
 }
@@ -42,7 +43,22 @@ interface ScenarioExecution {
     steps: ScenarioStep[];
     startTime: string;
     endTime?: string;
-    status: 'running' | 'completed' | 'failed';
+    status: 'running' | 'passed' | 'failed' | 'unimplemented';
+}
+
+interface StepResult {
+    step: string;
+    status: 'running' | 'passed' | 'failed' | 'unimplemented';
+    results: Array<{
+        passed: boolean;
+        details?: {
+            suggestion?: string;
+            expected?: any;
+            actual?: any;
+            error?: string;
+            isUnimplemented?: boolean;
+        };
+    }>;
 }
 
 class TestRunner {
@@ -387,77 +403,146 @@ class TestRunner {
         return results;
     }
 
+    private isStepImplemented(stepType: 'Given' | 'When' | 'Then' | 'And', stepText: string): { 
+        implemented: boolean; 
+        suggestion?: string;
+    } {
+        // Get patterns from the settings store
+        const { stepPatterns } = useSettingsStore.getState();
+        
+        // Remove the step type prefix from the text
+        const cleanText = stepText.replace(new RegExp(`^${stepType}\\s+`), '');
+        
+        // For 'And' steps, check against all patterns
+        const patternsToCheck = stepType === 'And' 
+            ? stepPatterns
+            : stepPatterns.filter(p => p.type === stepType);
+
+        // Check if the step matches any implemented pattern
+        const matchingPattern = patternsToCheck.find(p => {
+            try {
+                const regex = new RegExp(p.pattern);
+                return regex.test(cleanText);
+            } catch (e) {
+                console.error(`Invalid regex pattern: ${p.pattern}`, e);
+                return false;
+            }
+        });
+        
+        if (matchingPattern) {
+            return { implemented: true };
+        }
+
+        // If not implemented, try to suggest similar patterns
+        const similarPatterns = patternsToCheck
+            .filter(p => this.calculateSimilarity(cleanText, p.pattern) > 0.5)
+            .map(p => p.description);
+
+        let suggestion = 'This step type is not yet implemented.';
+        if (similarPatterns.length > 0) {
+            suggestion += ' Similar implemented steps: ' + similarPatterns.join(', ');
+        }
+
+        return { 
+            implemented: false,
+            suggestion 
+        };
+    }
+
+    private calculateSimilarity(str1: string, str2: string): number {
+        const longer = str1.length > str2.length ? str1 : str2;
+        const shorter = str1.length > str2.length ? str2 : str1;
+        
+        if (longer.length === 0) {
+            return 1.0;
+        }
+        
+        const costs: number[] = [];
+        for (let i = 0; i <= shorter.length; i++) {
+            let lastValue = i;
+            for (let j = 0; j <= longer.length; j++) {
+                if (i === 0) {
+                    costs[j] = j;
+                } else if (j > 0) {
+                    let newValue = costs[j - 1];
+                    if (shorter[i - 1] !== longer[j - 1]) {
+                        newValue = Math.min(
+                            Math.min(newValue, lastValue),
+                            costs[j]
+                        ) + 1;
+                    }
+                    costs[j - 1] = lastValue;
+                    lastValue = newValue;
+                }
+            }
+            if (i > 0) {
+                costs[costs.length - 1] = lastValue;
+            }
+        }
+        return (longer.length - costs[costs.length - 1]) / longer.length;
+    }
+
     async runStep(step: string, context: any): Promise<TestResult[]> {
         const stepType = this.getStepType(step);
         let results: TestResult[] = [];
 
-        try {
-            switch (stepType) {
-                case 'Given':
-                    results = await this.executeGivenStep(step);
-                    break;
-                case 'When':
-                    results = await this.executeWhenStep(step);
-                    break;
-                case 'Then':
-                case 'And':
-                    results = await this.executeThenStep(step);
-                    break;
-            }
-
-            // Update scenario execution with enhanced formatting
-            if (this.currentScenario) {
-                const stepResult: ScenarioStep = {
-                    type: stepType,
-                    text: step,
-                    status: results.every(r => r.passed) ? 'passed' : 'failed',
-                    results: results.map(r => ({
-                        ...r,
-                        displayText: this.formatResultDisplay(r)
-                    })),
-                    response: stepType === 'When' ? this.response : undefined
-                };
-
-                this.currentScenario.steps.push(stepResult);
-
-                // Format step result for API drawer
-                if (context.onApiCall) {
-                    const stepDisplay = `${stepResult.status === 'passed' ? '✓' : '✗'} ${step}`;
-                    const details = results[0]?.details || {};
-                    
-                    if (stepResult.status === 'failed' && results[0]?.details?.suggestion) {
-                        details.suggestion = results[0].details.suggestion;
-                    }
-
-                    // Send step result
-                    context.onApiCall(
-                        'TEST_LOG',
-                        'test-result',
-                        {
-                            type: 'test-log',
-                            scenarioId: this.currentScenario.scenarioId,
-                            scenarioRunId: this.currentScenario.scenarioRunId,
-                            content: stepDisplay,
-                            status: stepResult.status,
-                            color: results[0]?.details?.isUnimplemented ? '#ff9800' : (stepResult.status === 'passed' ? '#4caf50' : '#f44336'),
-                            timestamp: new Date().toISOString(),
-                            details
-                        },
-                        null
-                    );
-                }
-            }
-        } catch (error) {
+        // Check if step is implemented
+        const implementationCheck = this.isStepImplemented(stepType, step);
+        
+        if (!implementationCheck.implemented) {
             results = [{
                 name: step,
                 passed: false,
-                error: error instanceof Error ? error.message : 'Step execution failed',
-                displayText: `✗ ${step} - ${error instanceof Error ? error.message : 'Step execution failed'}`
+                details: {
+                    isUnimplemented: true,
+                    suggestion: implementationCheck.suggestion
+                }
             }];
+        } else {
+            try {
+                switch (stepType) {
+                    case 'Given':
+                        results = await this.executeGivenStep(step);
+                        break;
+                    case 'When':
+                        results = await this.executeWhenStep(step);
+                        break;
+                    case 'Then':
+                    case 'And':
+                        results = await this.executeThenStep(step);
+                        break;
+                }
+            } catch (error) {
+                results = [{
+                    name: step,
+                    passed: false,
+                    error: error instanceof Error ? error.message : 'Step execution failed'
+                }];
+            }
+        }
 
-            // Send error status
-            if (context.onApiCall && this.currentScenario) {
-                const errorDisplay = `✗ ${step}`;
+        // Update scenario execution
+        if (this.currentScenario) {
+            const stepResult: ScenarioStep = {
+                type: stepType,
+                text: step,
+                status: !implementationCheck.implemented ? 'unimplemented' : 
+                        (results.every(r => r.passed) ? 'passed' : 'failed'),
+                results: results.map(r => ({
+                    ...r,
+                    displayText: this.formatResultDisplay(r)
+                })),
+                response: stepType === 'When' ? this.response : undefined
+            };
+
+            this.currentScenario.steps.push(stepResult);
+
+            // Send step result
+            if (context.onApiCall) {
+                const stepDisplay = `${
+                    stepResult.status === 'passed' ? '✓' : 
+                    stepResult.status === 'unimplemented' ? '?' : '✗'
+                } ${step}`;
                 
                 context.onApiCall(
                     'TEST_LOG',
@@ -466,13 +551,12 @@ class TestRunner {
                         type: 'test-log',
                         scenarioId: this.currentScenario.scenarioId,
                         scenarioRunId: this.currentScenario.scenarioRunId,
-                        content: errorDisplay,
-                        status: 'failed',
-                        color: '#f44336',
+                        content: stepDisplay,
+                        status: stepResult.status,
+                        color: stepResult.status === 'unimplemented' ? '#ff9800' : 
+                               stepResult.status === 'passed' ? '#4caf50' : '#f44336',
                         timestamp: new Date().toISOString(),
-                        details: {
-                            error: error instanceof Error ? error.message : 'Step execution failed'
-                        }
+                        details: results[0]?.details
                     },
                     null
                 );
@@ -505,11 +589,19 @@ class TestRunner {
     endScenario(context: any) {
         if (this.currentScenario) {
             this.currentScenario.endTime = new Date().toISOString();
-            this.currentScenario.status = this.currentScenario.steps.some(s => s.status === 'failed') ? 'failed' : 'completed';
+            
+            // Check if any step is unimplemented
+            const hasUnimplementedStep = this.currentScenario.steps.some(s => s.status === 'unimplemented');
+            // Check if any step has failed
+            const hasFailedStep = this.currentScenario.steps.some(s => s.status === 'failed');
+            
+            // Set final status
+            this.currentScenario.status = hasUnimplementedStep ? 'unimplemented' : 
+                                         hasFailedStep ? 'failed' : 'passed';
 
             // Send final summary with proper test log format
             if (context.onApiCall) {
-                const status = this.currentScenario.status === 'completed' ? 'passed' : 'failed';
+                const status = this.currentScenario.status;
                 context.onApiCall(
                     'TEST_LOG',
                     'test-result',
@@ -519,7 +611,8 @@ class TestRunner {
                         scenarioRunId: this.currentScenario.scenarioRunId,
                         content: `Scenario: ${this.currentScenario.title} (${status})`,
                         status: status,
-                        color: status === 'passed' ? '#4caf50' : '#f44336',
+                        color: status === 'unimplemented' ? '#ff9800' : 
+                               status === 'passed' ? '#4caf50' : '#f44336',
                         timestamp: new Date().toISOString()
                     },
                     null

@@ -27,10 +27,19 @@ interface ApiLog {
 }
 
 interface TestLog {
-    timestamp: string;
+    type: 'test-log';
+    scenarioId: string;
+    scenarioRunId: string;
     content: string;
-    status: 'passed' | 'failed';
+    status: 'running' | 'completed' | 'failed';
     color: string;
+    timestamp: string;
+    details?: {
+        suggestion?: string;
+        expected?: any;
+        actual?: any;
+        error?: string;
+    };
 }
 
 interface ApiDrawerProps {

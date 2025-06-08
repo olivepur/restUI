@@ -48,12 +48,12 @@ import { sendRequest } from '../utils/api';
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 const STORAGE_KEY = 'scenarioDesigner';
 
-interface TestResult {
+export interface TestResult {
     type: 'test-log';
     scenarioId: string;      // References the GeneratedScenario.id
     scenarioRunId: string;   // Unique ID for this specific test run
     content: string;
-    status: 'passed' | 'failed';
+    status: 'running' | 'passed' | 'failed' | 'unimplemented';
     color: string;
     timestamp: string;
     details?: {
@@ -61,15 +61,16 @@ interface TestResult {
         expected?: any;
         actual?: any;
         error?: string;
+        isUnimplemented?: boolean;
     };
 }
 
-interface TestResults {
+export interface TestResults {
     [scenarioRunId: string]: {
         id: string;           // scenarioRunId
         scenarioId: string;   // References the GeneratedScenario.id
         title: string;
-        status: 'running' | 'completed' | 'failed';
+        status: 'running' | 'passed' | 'failed' | 'unimplemented';
         steps: TestResult[];
         startTime: string;
         endTime?: string;
@@ -122,6 +123,11 @@ const getScenarioStatus = (scenarioId: string, testResults: TestResults) => {
 };
 
 const prepareScenarioData = (scenario: GeneratedScenario, testResults: TestResults) => {
+    // Parse steps from content
+    const steps = scenario.content.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.startsWith('Given') || line.startsWith('When') || line.startsWith('Then'));
+
     // Get all runs for this scenario
     const scenarioRuns = Object.values(testResults)
         .filter(run => run.scenarioId === scenario.id)
@@ -146,7 +152,7 @@ const prepareScenarioData = (scenario: GeneratedScenario, testResults: TestResul
         scenario: {
             id: scenario.id,
             title: scenario.title,
-            content: scenario.content,
+            steps: steps,  // Array of step strings
             created_at: new Date().toISOString()
         },
         runs: scenarioRuns
@@ -281,6 +287,14 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
     const handleSaveScenario = (scenario: GeneratedScenario) => {
         const data = prepareScenarioData(scenario, testResults);
         console.log('Scenario data to be saved:', data);
+
+        // Update the scenario in the interaction.scenarios array
+        setInteraction(prev => ({
+            ...prev,
+            scenarios: prev.scenarios?.map(s => 
+                s.id === scenario.id ? scenario : s
+            )
+        }));
 
         // Get the latest run ID for this scenario
         const latestRun = Object.values(testResults)
@@ -459,7 +473,8 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                     id: result.scenarioRunId,
                     title: '',
                     status: 'running',
-                    steps: []
+                    steps: [],
+                    startTime: new Date().toISOString()
                 };
 
                 if (result.content.startsWith('Scenario:')) {
@@ -470,7 +485,8 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                         [result.scenarioRunId]: {
                             ...currentScenario,
                             title: scenarioTitle,
-                            status: result.status === 'passed' ? 'completed' : 'failed'
+                            status: result.status,  // Already using 'completed' or 'failed'
+                            endTime: new Date().toISOString() // Add endTime when scenario completes
                         }
                     };
                 } else {
@@ -496,10 +512,33 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
             });
         }
         
-        // Forward the call to the original onApiCall if provided
+        // Forward the API call to the parent component
         if (onApiCall) {
             onApiCall(method, url, request, response);
         }
+    };
+
+    // Add clearScenarioRuns function
+    const clearScenarioRuns = (scenarioId: string) => {
+        setTestResults(prev => {
+            const newResults = { ...prev };
+            // Remove all runs for this scenario
+            Object.keys(newResults).forEach(runId => {
+                if (newResults[runId].scenarioId === scenarioId) {
+                    delete newResults[runId];
+                }
+            });
+            return newResults;
+        });
+
+        // Clear the last run ID from saved state
+        setSavedState(prev => ({
+            ...prev,
+            [scenarioId]: {
+                ...prev[scenarioId],
+                lastRunId: undefined
+            }
+        }));
     };
 
     return (
@@ -728,10 +767,12 @@ export const ScenarioDesignerPage: React.FC<ScenarioDesignerPageProps> = ({ onAp
                                             {scenario.content}
                                         </Paper>
                                         <Box sx={{ mt: 2 }}>
-                                            <RunScenarios
+                                            <RunScenarios   
                                                 scenario={scenario}
                                                 onRun={handlePlayClick}
                                                 disabled={false}
+                                                testResults={testResults}
+                                                onClearRuns={() => clearScenarioRuns(scenario.id)}
                                             />
                                         </Box>
                                     </AccordionDetails>
