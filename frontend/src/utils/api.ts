@@ -36,8 +36,7 @@ export const sendRequest = async (url: string, options: RequestOptions = {}) => 
     
     const defaultHeaders = {
         'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': localStorage.getItem('token') || ''
+        'Content-Type': 'application/json'
     };
 
     // Only include credentials when using proxy
@@ -50,24 +49,35 @@ export const sendRequest = async (url: string, options: RequestOptions = {}) => 
         ...(useProxy ? { credentials: 'include' as const } : {})
     };
 
-    const response = await fetch(transformedUrl, fetchOptions);
+    try {
+        const response = await fetch(transformedUrl, fetchOptions);
 
-    let responseBody;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-        try {
-            responseBody = await response.json();
-        } catch (e) {
-            console.warn('Failed to parse JSON response:', e);
+        let responseBody;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            try {
+                responseBody = await response.json();
+            } catch (e) {
+                console.warn('Failed to parse JSON response:', e);
+                responseBody = await response.text();
+            }
+        } else {
             responseBody = await response.text();
         }
-    } else {
-        responseBody = await response.text();
-    }
 
-    return {
-        status: response.status,
-        body: responseBody,
-        headers: Object.fromEntries(response.headers.entries())
-    };
+        console.log('📥 Response received:', {
+            status: response.status,
+            headers: Object.fromEntries(response.headers.entries()),
+            body: responseBody
+        });
+
+        return {
+            status: response.status,
+            body: responseBody,
+            headers: Object.fromEntries(response.headers.entries())
+        };
+    } catch (error) {
+        console.error('❌ Request failed:', error);
+        throw error;
+    }
 }; 

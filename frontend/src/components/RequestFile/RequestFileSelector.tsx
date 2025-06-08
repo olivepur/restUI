@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useResizeObserver } from '../hooks/useResizeObserver';
+import { useResizeObserver } from '../../hooks/useResizeObserver';
 import {
     Box,
     FormControl,
@@ -9,7 +9,7 @@ import {
     TextField,
     Typography
 } from '@mui/material';
-import { fileService } from '../services/FileService';
+import { fileService } from '../../services/FileService';
 
 interface RequestFileData {
     method: string;

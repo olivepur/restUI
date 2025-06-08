@@ -13,7 +13,7 @@ import {
     IconButton
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { TransactionHistory } from '../components/TransactionHistory';
+import { TransactionHistory } from '../components/TarnsactionHistory/TransactionHistory';
 import type { SavedTransaction } from '../components/FlowchartEditor/types';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';

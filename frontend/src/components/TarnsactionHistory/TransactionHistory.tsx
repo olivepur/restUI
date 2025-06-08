@@ -19,7 +19,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { format } from 'date-fns';
-import type { SavedTransaction, SystemNode, TransactionEdge } from './FlowchartEditor/types';
+import type { SavedTransaction, SystemNode, TransactionEdge } from '../FlowchartEditor/types';
 import { Theme } from '@mui/material/styles';
 
 // Define a color palette for transactions

@@ -52,16 +52,22 @@ import {
     useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GeneratedScenario } from './scenarioGenerator';
+import { GeneratedScenario } from './ScenarioGenerator';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 interface ScenarioEditorProps {
     open: boolean;
     scenario: GeneratedScenario;
     onClose: () => void;
     onSave: (updatedScenario: GeneratedScenario) => void;
+    lastResponse?: {
+        status: number;
+        headers: Record<string, string>;
+        body: any;
+    };
 }
 
 interface Step {
@@ -323,7 +329,8 @@ export const ScenarioEditor: React.FC<ScenarioEditorProps> = ({
     open,
     scenario,
     onClose,
-    onSave
+    onSave,
+    lastResponse
 }) => {
     const theme = useTheme();
     const [title, setTitle] = useState(scenario.title);
@@ -384,18 +391,10 @@ export const ScenarioEditor: React.FC<ScenarioEditorProps> = ({
     };
 
     const handleSave = () => {
-        if (!title.trim()) {
-            setTitleError('Title is required');
-            return;
-        }
-
-        const content = steps
-            .map(step => `${step.type} ${step.content}`)
-            .join('\n');
-        
+        const content = steps.map(step => `${step.type} ${step.content}`).join('\n');
         onSave({
             ...scenario,
-            title: title.trim(),
+            title,
             content
         });
         onClose();
@@ -429,6 +428,213 @@ export const ScenarioEditor: React.FC<ScenarioEditorProps> = ({
         ));
     };
 
+    const adjustPathExpression = (path: string, responseBody: any): string => {
+        console.log('🔍 Adjusting path:', {
+            originalPath: path,
+            responseBodyStructure: typeof responseBody === 'object' ? 
+                Object.keys(responseBody) : 
+                typeof responseBody
+        });
+
+        // Handle array index paths like "0" or "0.id"
+        const parts = path.split('.');
+        let adjustedParts = parts.map((part, index) => {
+            // If it's a number, it's likely an array index
+            if (/^\d+$/.test(part)) {
+                const newPart = index === 0 ? `body[${part}]` : `[${part}]`;
+                console.log(`  📝 Converting path part: "${part}" → "${newPart}"`);
+                return newPart;
+            }
+            return part;
+        });
+
+        const result = adjustedParts.join('.');
+        console.log('  ✅ Adjusted path result:', result);
+        return result;
+    };
+
+    const getValueFromPath = (obj: any, path: string): any => {
+        console.log('🔍 Getting value from path:', {
+            path,
+            objectStructure: typeof obj === 'object' ? 
+                Object.keys(obj) : 
+                typeof obj
+        });
+
+        const value = path.split('.').reduce((acc, part) => {
+            if (acc === undefined) return undefined;
+            // Handle array indices
+            if (/^\d+$/.test(part)) {
+                return acc[parseInt(part)];
+            }
+            return acc[part];
+        }, obj);
+
+        console.log('  ✅ Found value:', {
+            type: typeof value,
+            isArray: Array.isArray(value),
+            preview: value === null ? 'null' :
+                    typeof value === 'object' ? 
+                        (Array.isArray(value) ? 
+                            `Array(${value.length})` : 
+                            Object.keys(value)) :
+                        String(value)
+        });
+
+        return value;
+    };
+
+    const inferTypeFromValue = (value: any): string => {
+        const type = value === null ? 'null' :
+                    Array.isArray(value) ? 'array' :
+                    typeof value;
+        
+        console.log('🔍 Inferring type:', {
+            value: typeof value === 'object' ? 
+                (Array.isArray(value) ? 
+                    `Array(${value.length})` : 
+                    Object.keys(value)) :
+                value,
+            inferredType: type
+        });
+        
+        return type;
+    };
+
+    const instrumentalize = () => {
+        console.group('🔧 Smart Adjust Process');
+        console.log('📊 Response Data Available:', {
+            hasResponse: !!lastResponse,
+            status: lastResponse?.status,
+            bodyType: typeof lastResponse?.body,
+            isArray: Array.isArray(lastResponse?.body)
+        });
+
+        if (!lastResponse?.body) {
+            console.warn('⚠️ No response body available for smart path adjustment');
+            console.groupEnd();
+            return;
+        }
+
+        const newSteps = steps.map(step => {
+            let adjustedContent = step.content;
+            console.group(`Processing step: ${step.content}`);
+
+            if (step.type === 'Then' || step.type === 'And') {
+                // Handle type assertions
+                adjustedContent = adjustedContent.replace(
+                    /(?:the )?(?:path )?["']?(\d+(?:\.\w+)*|\w+(?:\.\w+)*)["']? should be of type ["'](\w+)["']/g,
+                    (match, path, type) => {
+                        console.group('  🔄 Processing type assertion');
+                        console.log('    Found match:', { path, type });
+                        
+                        const adjustedPath = adjustPathExpression(path, lastResponse.body);
+                        const result = `path "${adjustedPath}" should be of type "${type}"`;
+                        
+                        console.log('    ✅ Result:', result);
+                        console.groupEnd();
+                        return result;
+                    }
+                );
+
+                // Handle object assertions
+                adjustedContent = adjustedContent.replace(
+                    /(?:the )?(?:path )?["']?(\d+(?:\.\w+)*|\w+(?:\.\w+)*)["']? should be an object/g,
+                    (match, path) => {
+                        console.group('  🔄 Processing object assertion');
+                        console.log('    Found match:', { path });
+                        
+                        const adjustedPath = adjustPathExpression(path, lastResponse.body);
+                        const result = `path "${adjustedPath}" should be an object`;
+                        
+                        console.log('    ✅ Result:', result);
+                        console.groupEnd();
+                        return result;
+                    }
+                );
+
+                // Handle array assertions
+                adjustedContent = adjustedContent.replace(
+                    /(?:the )?(?:path )?["']?(\d+(?:\.\w+)*|\w+(?:\.\w+)*)["']? should be an array/g,
+                    (match, path) => {
+                        console.group('  🔄 Processing array assertion');
+                        console.log('    Found match:', { path });
+                        
+                        const adjustedPath = adjustPathExpression(path, lastResponse.body);
+                        const result = `path "${adjustedPath}" should be an array`;
+                        
+                        console.log('    ✅ Result:', result);
+                        console.groupEnd();
+                        return result;
+                    }
+                );
+
+                // Handle direct value assertions
+                adjustedContent = adjustedContent.replace(
+                    /(?:the )?["']?(\d+(?:\.\w+)*|\w+(?:\.\w+)*)["']? should be ["']([^"']+)["']/g,
+                    (match, path, expectedValue) => {
+                        console.group('  🔄 Processing value assertion');
+                        console.log('    Found match:', { path, expectedValue });
+                        
+                        const adjustedPath = adjustPathExpression(path, lastResponse.body);
+                        const result = `path "${adjustedPath}" should be "${expectedValue}"`;
+                        
+                        console.log('    ✅ Result:', result);
+                        console.groupEnd();
+                        return result;
+                    }
+                );
+
+                // Status checks
+                adjustedContent = adjustedContent.replace(
+                    /(?:the )?status should be (\d+)/,
+                    (match, status) => {
+                        console.group('  🔄 Processing status check');
+                        const statusMap: { [key: string]: string } = {
+                            '200': 'response status should be 200',
+                            '201': 'response status should be 201',
+                            '204': 'response status should be 204',
+                            '400': 'response status should be 400',
+                            '401': 'response status should be 401',
+                            '403': 'response status should be 403',
+                            '404': 'response status should be 404',
+                            '409': 'response status should be 409',
+                            '500': 'response status should be 500'
+                        };
+                        const result = statusMap[status] || match;
+                        console.log('    ✅ Result:', result);
+                        console.groupEnd();
+                        return result;
+                    }
+                );
+            }
+
+            if (adjustedContent !== step.content) {
+                console.log('  ✨ Step adjusted:', {
+                    from: step.content,
+                    to: adjustedContent
+                });
+            } else {
+                console.log('  ℹ️ No adjustments needed');
+            }
+
+            console.groupEnd();
+            return {
+                ...step,
+                content: adjustedContent
+            };
+        });
+
+        console.log('📊 Summary of changes:', {
+            originalStepCount: steps.length,
+            adjustedStepCount: newSteps.length,
+            changedSteps: newSteps.filter((step, i) => step.content !== steps[i].content).length
+        });
+
+        setSteps(newSteps);
+        console.groupEnd();
+    };
+
     return (
         <Dialog 
             open={open} 
@@ -448,164 +654,65 @@ export const ScenarioEditor: React.FC<ScenarioEditorProps> = ({
                 </Stack>
             </DialogTitle>
             <DialogContent>
-                <Stack spacing={3}>
+                <Stack spacing={2} sx={{ mt: 2 }}>
                     <TextField
-                        label="Scenario Title"
+                        label="Title"
                         value={title}
-                        onChange={(e) => {
-                            setTitle(e.target.value);
-                            setTitleError('');
-                        }}
+                        onChange={(e) => setTitle(e.target.value)}
                         fullWidth
-                        margin="normal"
-                        error={!!titleError}
-                        helperText={titleError}
-                        required
                     />
-
-                    <Box>
-                        <Typography variant="h6" gutterBottom>
-                            Steps
-                            <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                                (drag to reorder)
-                            </Typography>
-                        </Typography>
-
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
-                        >
-                            <SortableContext
-                                items={steps}
-                                strategy={verticalListSortingStrategy}
+                    <Stack direction="row" spacing={2} alignItems="flex-start">
+                        <Stack spacing={1} sx={{ flex: 1 }}>
+                            {steps.map((step, index) => (
+                                <Stack 
+                                    key={step.id} 
+                                    direction="row" 
+                                    spacing={1} 
+                                    alignItems="center"
+                                >
+                                    <TextField
+                                        value={step.content}
+                                        onChange={(e) => handleUpdateStep({
+                                            ...step,
+                                            content: e.target.value
+                                        })}
+                                        fullWidth
+                                        size="small"
+                                    />
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleRemoveStep(step.id)}
+                                    >
+                                        <DeleteIcon />
+                                    </IconButton>
+                                </Stack>
+                            ))}
+                            <Button
+                                startIcon={<AddIcon />}
+                                onClick={handleAddStep}
+                                variant="outlined"
+                                size="small"
                             >
-                                <List>
-                                    {steps.map((step) => (
-                                        <SortableStep
-                                            key={step.id}
-                                            step={step}
-                                            onRemove={() => handleRemoveStep(step.id)}
-                                            onUpdate={handleUpdateStep}
-                                        />
-                                    ))}
-                                </List>
-                            </SortableContext>
-                        </DndContext>
-                    </Box>
-
-                    <Stack spacing={2}>
-                        <Typography variant="subtitle1" gutterBottom>
-                            Add New Step
-                        </Typography>
-                        <Stack direction="row" spacing={2} alignItems="flex-start">
-                            <FormControl sx={{ minWidth: 120 }}>
-                                <InputLabel>Step Type</InputLabel>
-                                <Select
-                                    value={newStepType}
-                                    onChange={(e) => setNewStepType(e.target.value as Step['type'])}
-                                    label="Step Type"
-                                >
-                                    <MenuItem value="Given">Given</MenuItem>
-                                    <MenuItem value="When">When</MenuItem>
-                                    <MenuItem value="Then">Then</MenuItem>
-                                    <MenuItem value="And">And</MenuItem>
-                                </Select>
-                            </FormControl>
-                            <TextField
-                                label="New Step Content"
-                                value={newStepContent}
-                                onChange={(e) => setNewStepContent(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        handleAddStep();
-                                    }
-                                }}
-                                fullWidth
-                                multiline
-                                rows={2}
-                                inputRef={newStepInputRef}
-                            />
-                            <Tooltip title="Add step (Enter)">
-                                <Button
-                                    variant="contained"
-                                    onClick={handleAddStep}
-                                    disabled={!newStepContent.trim()}
-                                    startIcon={<AddIcon />}
-                                >
-                                    Add
-                                </Button>
-                            </Tooltip>
+                                Add Step
+                            </Button>
                         </Stack>
-                    </Stack>
-
-                    <Divider sx={{ my: 2 }} />
-
-                    <Box>
-                        <Typography variant="h6" gutterBottom>
-                            Step Suggestions
-                        </Typography>
-
-                        <TextField
-                            fullWidth
-                            placeholder="Search suggestions..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            sx={{ mb: 2 }}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <SearchIcon />
-                                    </InputAdornment>
-                                )
-                            }}
-                        />
-
-                        {Object.entries(groupedSuggestions).map(([category, suggestions]) => (
-                            <Accordion
-                                key={category}
-                                expanded={expandedSection === category.toLowerCase()}
-                                onChange={() => setExpandedSection(expandedSection === category.toLowerCase() ? false : category.toLowerCase())}
+                        <Tooltip title="Smart Adjust - Automatically improve test steps using response data">
+                            <Button
+                                onClick={instrumentalize}
+                                variant="contained"
+                                color="secondary"
+                                startIcon={<AutoFixHighIcon />}
+                                sx={{ 
+                                    minWidth: 'auto',
+                                    alignSelf: 'flex-start',
+                                    px: 2,
+                                    py: 1
+                                }}
                             >
-                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                    <Typography color="primary">{category}</Typography>
-                                </AccordionSummary>
-                                <AccordionDetails>
-                                    <List dense>
-                                        {suggestions.map((suggestion, index) => (
-                                            <ListItem key={index}>
-                                                <ListItemText
-                                                    primary={
-                                                        <Stack direction="row" spacing={1} alignItems="center">
-                                                            <Chip
-                                                                label={suggestion.type}
-                                                                size="small"
-                                                                color={
-                                                                    suggestion.type === 'Given' ? 'primary' :
-                                                                    suggestion.type === 'When' ? 'secondary' :
-                                                                    'default'
-                                                                }
-                                                            />
-                                                            <Link
-                                                                component="button"
-                                                                variant="body2"
-                                                                onClick={() => handleStepSuggestionClick(suggestion)}
-                                                                sx={{ textAlign: 'left' }}
-                                                            >
-                                                                {suggestion.pattern}
-                                                            </Link>
-                                                        </Stack>
-                                                    }
-                                                    secondary={suggestion.description}
-                                                />
-                                            </ListItem>
-                                        ))}
-                                    </List>
-                                </AccordionDetails>
-                            </Accordion>
-                        ))}
-                    </Box>
+                                Smart Adjust
+                            </Button>
+                        </Tooltip>
+                    </Stack>
                 </Stack>
             </DialogContent>
             <DialogActions>
@@ -614,9 +721,8 @@ export const ScenarioEditor: React.FC<ScenarioEditorProps> = ({
                     onClick={handleSave} 
                     variant="contained" 
                     color="primary"
-                    disabled={!title.trim() || steps.length === 0}
                 >
-                    Save
+                    Save Changes
                 </Button>
             </DialogActions>
         </Dialog>

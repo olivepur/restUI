@@ -1,5 +1,5 @@
-import { sendRequest } from '../utils/api';
-import { testRunner } from './testRunner';
+import { sendRequest } from '../../utils/api';
+import { testRunner } from '../ScenarioRunner/testRunner';
 
 export interface GeneratedScenario {
     id: string;         // Unique identifier for the scenario
